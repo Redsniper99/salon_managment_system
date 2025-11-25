@@ -1,26 +1,37 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Primary Colors - Olive Green */
+  --color-primary-50: #f4f7f4;
+  --color-primary-100: #e3ebe3;
+  --color-primary-200: #c5d6c5;
+  --color-primary-300: #9cb89c;
+  --color-primary-400: #749674;
+  --color-primary-500: #567856;
+  --color-primary-600: #4B5945;
+  /* Main Brand Color */
+  --color-primary-700: #3a453a;
+  --color-primary-800: #303830;
+  --color-primary-900: #282e28;
+  --color-primary-950: #151a15;
+}
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #111827;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+
+.dark {
+  --background: #111827;
+  --foreground: #f9fafb;
 }
 
 body {
-  background: var(--background);
   color: var(--foreground);
+  background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
 }
