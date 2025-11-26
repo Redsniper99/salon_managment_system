@@ -45,6 +45,7 @@ export default function ReportsPage() {
                         value={dateRange.start}
                         onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
                         leftIcon={<Calendar className="h-5 w-5" />}
+                        className="sm:flex-1"
                     />
                     <Input
                         type="date"
@@ -52,8 +53,9 @@ export default function ReportsPage() {
                         value={dateRange.end}
                         onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
                         leftIcon={<Calendar className="h-5 w-5" />}
+                        className="sm:flex-1"
                     />
-                    <Button variant="primary" className="self-end">
+                    <Button variant="primary" className="self-end sm:flex-none">
                         Apply
                     </Button>
                 </div>

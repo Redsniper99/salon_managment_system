@@ -96,7 +96,7 @@ export default function AppointmentsPage() {
                         type="date"
                         value={selectedDate}
                         onChange={(e) => setSelectedDate(e.target.value)}
-                        className="lg:w-48"
+                        className="w-full lg:w-48"
                         leftIcon={<Calendar className="h-5 w-5" />}
                     />
 
