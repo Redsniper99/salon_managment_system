@@ -48,6 +48,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
                         id={inputId}
                         className={cn(
                             'w-full min-w-0 max-w-full px-4 py-2.5 rounded-xl border transition-all duration-200',
+                            'appearance-none text-base', // Reset browser styles & prevent iOS zoom
                             'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent',
                             'disabled:bg-gray-50 disabled:cursor-not-allowed',
                             'text-gray-900 dark:text-gray-300',
