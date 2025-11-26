@@ -92,13 +92,15 @@ export default function AppointmentsPage() {
             <div className="card p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                 <div className="flex flex-col lg:flex-row gap-4">
                     {/* Date Picker */}
-                    <Input
-                        type="date"
-                        value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        className="w-full lg:w-48"
-                        leftIcon={<Calendar className="h-5 w-5" />}
-                    />
+                    <div className="w-full max-w-full lg:w-auto flex-shrink-0">
+                        <Input
+                            type="date"
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            className="w-full lg:w-48"
+                            leftIcon={<Calendar className="h-5 w-5" />}
+                        />
+                    </div>
 
                     {/* Search */}
                     <div className="flex-1">
