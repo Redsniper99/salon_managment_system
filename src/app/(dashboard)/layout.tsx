@@ -16,7 +16,7 @@ export default function DashboardLayout({
 
     return (
         <ProtectedRoute>
-            <div className="flex h-screen overflow-hidden">
+            <div className="flex h-dvh overflow-hidden">
                 {/* Desktop Sidebar */}
                 <Sidebar />
 

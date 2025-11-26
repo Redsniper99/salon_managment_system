@@ -81,7 +81,7 @@ export default function ReportsPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.05 }}
-                    className="card p-6"
+                    className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700"
                 >
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-secondary-100 dark:bg-secondary-900/30 rounded-xl">
@@ -96,7 +96,7 @@ export default function ReportsPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
-                    className="card p-6"
+                    className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700"
                 >
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-success-100 dark:bg-success-900/30 rounded-xl">
@@ -113,7 +113,7 @@ export default function ReportsPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="card p-6"
+                    className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700"
                 >
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-warning-100 dark:bg-warning-900/30 rounded-xl">
