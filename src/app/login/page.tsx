@@ -79,7 +79,7 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-primary-500 via-primary-600 to-secondary-600 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary-800 via-primary-950 to-black flex items-center justify-center p-4">
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -104,13 +104,13 @@ export default function LoginPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2 }}
-                    className="glass bg-white/95 p-8 rounded-3xl shadow-2xl"
+                    className="glass bg-gray-900/30 backdrop-blur-xl p-8 rounded-3xl shadow-2xl border border-white/10"
                 >
-                    <h2 className="text-2xl font-bold text-gray-900 mb-6">Welcome Back</h2>
+                    <h2 className="text-2xl font-bold text-white mb-6">Welcome Back</h2>
 
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                            <label className="block text-sm font-medium text-white/90 mb-1.5">
                                 Email Address
                             </label>
                             <Input
@@ -122,14 +122,14 @@ export default function LoginPage() {
                                 placeholder="you@example.com"
                                 required
                                 autoComplete="email"
-                                className={`bg-white text-gray-900 border-gray-300 dark:bg-white dark:text-gray-900 dark:border-gray-300 dark:focus:ring-primary-500 ${emailError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
+                                className={`bg-white/10 text-white border-white/20 placeholder:text-gray-400 focus:bg-white/15 focus:border-primary-400 ${emailError ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : ''
                                     }`}
                             />
                             {emailError && (
                                 <motion.div
                                     initial={{ opacity: 0, y: -5 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className="flex items-center gap-1 mt-1.5 text-red-600 text-sm"
+                                    className="flex items-center gap-1 mt-1.5 text-red-300 text-sm"
                                 >
                                     <AlertCircle className="h-4 w-4" />
                                     <span>{emailError}</span>
@@ -138,7 +138,7 @@ export default function LoginPage() {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                            <label className="block text-sm font-medium text-white/90 mb-1.5">
                                 Password
                             </label>
                             <Input
@@ -152,7 +152,7 @@ export default function LoginPage() {
                                 placeholder="••••••••"
                                 required
                                 autoComplete="current-password"
-                                className="bg-white text-gray-900 border-gray-300 dark:bg-white dark:text-gray-900 dark:border-gray-300 dark:focus:ring-primary-500"
+                                className="bg-white/10 text-white border-white/20 placeholder:text-gray-400 focus:bg-white/15 focus:border-primary-400"
                             />
                         </div>
 
@@ -160,7 +160,7 @@ export default function LoginPage() {
                             <motion.div
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
+                                className="flex items-start gap-2 p-3 bg-red-500/20 border border-red-400/30 rounded-xl text-red-200 text-sm"
                             >
                                 <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
                                 <span>{error}</span>
@@ -171,7 +171,7 @@ export default function LoginPage() {
                             type="submit"
                             variant="primary"
                             size="lg"
-                            className="w-full"
+                            className="w-full bg-white text-white hover:bg-gray-100 font-bold shadow-lg shadow-black/20 border-none"
                             isLoading={isLoading}
                             disabled={isLoading || !!emailError}
                         >
@@ -180,8 +180,8 @@ export default function LoginPage() {
                     </form>
                 </motion.div>
 
-                <p className="text-center text-primary-100 text-sm mt-6">
-                    © 2024 SalonFlow. All rights reserved.
+                <p className="text-center text-white/50 text-sm mt-6">
+                    © 2025 Metafuse. All rights reserved.
                 </p>
             </motion.div>
         </div>

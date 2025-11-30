@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -21,7 +22,10 @@ import {
     Target,
     Megaphone,
     LucideIcon,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface NavItem {
     label: string;
@@ -120,26 +124,66 @@ const navItems: NavItem[] = [
 export default function Sidebar() {
     const pathname = usePathname();
     const { user } = useAuth();
+    const [isCollapsed, setIsCollapsed] = useState(false);
 
     const filteredNavItems = navItems.filter((item) =>
         user ? item.allowedRoles.includes(user.role) : false
     );
 
     return (
-        <aside className="hidden lg:flex flex-col w-64 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 min-h-screen transition-colors">
-            <div className="p-6">
-                <Link href="/dashboard" className="flex items-center gap-3">
-                    <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-xl">
+        <motion.aside
+            initial={false}
+            animate={{
+                width: isCollapsed ? '80px' : '256px',
+            }}
+            transition={{
+                duration: 0.3,
+                ease: 'easeInOut',
+            }}
+            className="hidden lg:flex flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 min-h-screen transition-colors relative"
+        >
+            {/* Collapse/Expand Button */}
+            <button
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="absolute -right-3 top-20 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full p-1.5 shadow-md hover:shadow-lg transition-all hover:scale-110"
+                aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+                {isCollapsed ? (
+                    <ChevronRight className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                ) : (
+                    <ChevronLeft className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                )}
+            </button>
+
+            {/* Logo Section */}
+            <div className={cn('p-6 transition-all', isCollapsed && 'px-4')}>
+                <Link
+                    href="/dashboard"
+                    className={cn('flex items-center gap-3', isCollapsed && 'justify-center')}
+                >
+                    <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-xl flex-shrink-0">
                         <Scissors className="h-6 w-6 text-primary-600 dark:text-primary-400" />
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold text-gray-900 dark:text-white">SalonFlow</h1>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Salon Management</p>
-                    </div>
+                    {!isCollapsed && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <h1 className="text-xl font-bold text-gray-900 dark:text-white whitespace-nowrap">
+                                SalonFlow
+                            </h1>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                Salon Management
+                            </p>
+                        </motion.div>
+                    )}
                 </Link>
             </div>
 
-            <nav className="flex-1 px-4 space-y-1">
+            {/* Navigation */}
+            <nav className={cn('flex-1 px-4 space-y-1', isCollapsed && 'px-2')}>
                 {filteredNavItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;
@@ -149,24 +193,66 @@ export default function Sidebar() {
                             key={item.href}
                             href={item.href}
                             className={cn(
-                                'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200',
+                                'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative group',
                                 isActive
                                     ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-medium'
-                                    : 'text-gray-700 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                    : 'text-gray-700 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50',
+                                isCollapsed && 'justify-center px-3'
                             )}
+                            title={isCollapsed ? item.label : ''}
                         >
-                            <Icon className={cn('h-5 w-5', isActive ? 'text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-gray-500')} />
-                            <span>{item.label}</span>
+                            <Icon
+                                className={cn(
+                                    'h-5 w-5 flex-shrink-0',
+                                    isActive
+                                        ? 'text-primary-600 dark:text-primary-400'
+                                        : 'text-gray-500 dark:text-gray-500'
+                                )}
+                            />
+                            {!isCollapsed && (
+                                <motion.span
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="whitespace-nowrap"
+                                >
+                                    {item.label}
+                                </motion.span>
+                            )}
+
+                            {/* Tooltip for collapsed state */}
+                            {isCollapsed && (
+                                <div className="absolute left-full ml-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none">
+                                    {item.label}
+                                    <div className="absolute top-1/2 -left-1 -translate-y-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45"></div>
+                                </div>
+                            )}
                         </Link>
                     );
                 })}
             </nav>
 
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="text-xs text-gray-500 dark:text-gray-500 text-center">
-                    v1.0.0 • {user?.role}
+            {/* Footer */}
+            <div
+                className={cn(
+                    'p-4 border-t border-gray-200 dark:border-gray-700',
+                    isCollapsed && 'px-2'
+                )}
+            >
+                <div
+                    className={cn(
+                        'text-xs text-gray-500 dark:text-gray-500 text-center',
+                        isCollapsed && 'transform -rotate-90 origin-center'
+                    )}
+                >
+                    {!isCollapsed ? (
+                        <>v1.0.0 • {user?.role}</>
+                    ) : (
+                        <span className="block w-16">v1.0</span>
+                    )}
                 </div>
             </div>
-        </aside>
+        </motion.aside>
     );
 }

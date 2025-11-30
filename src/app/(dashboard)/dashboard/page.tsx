@@ -116,9 +116,22 @@ export default function DashboardPage() {
             const newStatus = !isEmergencyUnavailable;
             await availabilityService.toggleEmergencyStatus(staffId, newStatus);
             setIsEmergencyUnavailable(newStatus);
-        } catch (error) {
+        } catch (error: unknown) {
             console.error('Error toggling emergency status:', error);
-            alert('Failed to update status. Please try again.');
+
+            // Get detailed error message
+            let errorMessage = 'Failed to update status. ';
+            if (error && typeof error === 'object') {
+                if ('message' in error) {
+                    errorMessage += (error as Error).message;
+                } else {
+                    errorMessage += JSON.stringify(error);
+                }
+            } else {
+                errorMessage += 'Please try again.';
+            }
+
+            alert(errorMessage);
         } finally {
             setTogglingEmergency(false);
         }
