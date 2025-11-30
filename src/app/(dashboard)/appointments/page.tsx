@@ -1,60 +1,43 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, Filter, Plus, Search } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
 import CreateAppointmentModal from '@/components/appointments/CreateAppointmentModal';
-import { Appointment, AppointmentStatus } from '@/lib/types';
+import AppointmentDetailsModal from '@/components/appointments/AppointmentDetailsModal';
+import EditAppointmentModal from '@/components/appointments/EditAppointmentModal';
+import ConfirmationDialog from '@/components/shared/ConfirmationDialog';
+import CalendarView from '@/components/appointments/CalendarView';
+import { AppointmentStatus } from '@/lib/types';
 import { formatTime, formatDate } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-
-// Mock data
-const mockAppointments: Appointment[] = [
-    {
-        id: '1',
-        customerId: 'c1',
-        stylistId: 's1',
-        branchId: 'b1',
-        services: ['Hair Cut', 'Styling'],
-        date: '2024-11-26',
-        startTime: '10:00',
-        duration: 60,
-        status: 'Confirmed',
-        createdAt: '2024-11-25',
-        updatedAt: '2024-11-25',
-    },
-    {
-        id: '2',
-        customerId: 'c2',
-        stylistId: 's2',
-        branchId: 'b1',
-        services: ['Bridal Makeup'],
-        date: '2024-11-26',
-        startTime: '14:00',
-        duration: 120,
-        status: 'InService',
-        createdAt: '2024-11-25',
-        updatedAt: '2024-11-26',
-    },
-];
+import { appointmentsService } from '@/services/appointments';
 
 const statusColors: Record<AppointmentStatus, string> = {
-    Pending: 'bg-warning-100 text-warning-700 border-warning-200',
-    Confirmed: 'bg-secondary-100 text-secondary-700 border-secondary-200',
-    InService: 'bg-primary-100 text-primary-700 border-primary-200',
-    Completed: 'bg-success-100 text-success-700 border-success-200',
-    Cancelled: 'bg-danger-100 text-danger-700 border-danger-200',
-    NoShow: 'bg-gray-100 text-gray-700 border-gray-200',
+    Pending: 'bg-warning-100 text-warning-700 border-warning-200 dark:bg-warning-900/30 dark:text-warning-400',
+    Confirmed: 'bg-secondary-100 text-secondary-700 border-secondary-200 dark:bg-secondary-900/30 dark:text-secondary-400',
+    InService: 'bg-primary-100 text-primary-700 border-primary-200 dark:bg-primary-900/30 dark:text-primary-400',
+    Completed: 'bg-success-100 text-success-700 border-success-200 dark:bg-success-900/30 dark:text-success-400',
+    Cancelled: 'bg-danger-100 text-danger-700 border-danger-200 dark:bg-danger-900/30 dark:text-danger-400',
+    NoShow: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300',
 };
 
 export default function AppointmentsPage() {
     const [view, setView] = useState<'list' | 'calendar'>('list');
     const [selectedStatus, setSelectedStatus] = useState<AppointmentStatus | 'All'>('All');
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedDate, setSelectedDate] = useState('2024-11-26');
+    const [selectedDate, setSelectedDate] = useState<string | 'all'>(new Date().toISOString().split('T')[0]);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+    const [appointments, setAppointments] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
     const statuses: (AppointmentStatus | 'All')[] = [
         'All',
@@ -66,9 +49,98 @@ export default function AppointmentsPage() {
         'NoShow',
     ];
 
-    const filteredAppointments = mockAppointments.filter((apt) => {
-        if (selectedStatus !== 'All' && apt.status !== selectedStatus) return false;
-        return true;
+    // Fetch appointments
+    useEffect(() => {
+        fetchAppointments();
+    }, [selectedDate, selectedStatus, view]);
+
+    const fetchAppointments = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const filters: any = {};
+
+            // For list view, filter by selected date (unless 'all' is selected)
+            // For calendar view, fetch all appointments (calendar will handle display)
+            if (view === 'list' && selectedDate !== 'all') {
+                filters.date = selectedDate;
+            }
+
+            if (selectedStatus !== 'All') {
+                filters.status = selectedStatus;
+            }
+            const data = await appointmentsService.getAppointments(filters);
+            setAppointments(data || []);
+        } catch (err: any) {
+            console.error('Error fetching appointments:', err);
+            setError(err.message || 'Failed to load appointments');
+            setAppointments([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAppointmentCreated = () => {
+        setShowCreateModal(false);
+        fetchAppointments(); // Refresh list
+    };
+
+    const handleViewAppointment = (apt: any) => {
+        setSelectedAppointment(apt);
+        setShowDetailsModal(true);
+    };
+
+    const handleEditAppointment = (apt: any) => {
+        setSelectedAppointment(apt);
+        setShowDetailsModal(false);
+        setShowEditModal(true);
+    };
+
+    const handleDeleteClick = (apt?: any) => {
+        if (apt) setSelectedAppointment(apt);
+        setShowDetailsModal(false);
+        setShowDeleteDialog(true);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!selectedAppointment) return;
+
+        setDeleteLoading(true);
+        try {
+            await appointmentsService.deleteAppointment(selectedAppointment.id);
+            setShowDeleteDialog(false);
+            setSelectedAppointment(null);
+            fetchAppointments();
+        } catch (error: any) {
+            alert(error.message || 'Failed to delete appointment');
+        } finally {
+            setDeleteLoading(false);
+        }
+    };
+
+    const handleStatusUpdate = async (status: AppointmentStatus) => {
+        if (!selectedAppointment) return;
+
+        try {
+            await appointmentsService.updateStatus(selectedAppointment.id, status);
+            // Update local state
+            setSelectedAppointment({ ...selectedAppointment, status });
+            fetchAppointments();
+        } catch (error: any) {
+            alert(error.message || 'Failed to update status');
+            throw error;
+        }
+    };
+
+    // Filter appointments by search query
+    const filteredAppointments = appointments.filter(apt => {
+        if (!searchQuery) return true;
+        const query = searchQuery.toLowerCase();
+        return (
+            apt.customer?.name?.toLowerCase().includes(query) ||
+            apt.customer?.phone?.toLowerCase().includes(query) ||
+            apt.stylist?.name?.toLowerCase().includes(query)
+        );
     });
 
     return (
@@ -93,13 +165,24 @@ export default function AppointmentsPage() {
                 <div className="flex flex-col lg:flex-row gap-4">
                     {/* Date Picker */}
                     <div className="w-full max-w-full lg:w-auto flex-shrink-0">
-                        <Input
-                            type="date"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                            className="w-full lg:w-48"
-                            leftIcon={<Calendar className="h-5 w-5" />}
-                        />
+                        <div className="flex gap-2">
+                            <Input
+                                type="date"
+                                value={selectedDate === 'all' ? '' : selectedDate}
+                                onChange={(e) => setSelectedDate(e.target.value || 'all')}
+                                className="w-full lg:w-48"
+                                leftIcon={<Calendar className="h-5 w-5" />}
+                                min={new Date().toISOString().split('T')[0]}
+                            />
+                            <Button
+                                variant={selectedDate === 'all' ? 'primary' : 'outline'}
+                                size="md"
+                                onClick={() => setSelectedDate('all')}
+                                className="whitespace-nowrap"
+                            >
+                                All Dates
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Search */}
@@ -154,70 +237,139 @@ export default function AppointmentsPage() {
             {/* Appointments List */}
             {view === 'list' && (
                 <div className="space-y-3">
-                    {filteredAppointments.map((appointment, index) => (
-                        <motion.div
-                            key={appointment.id}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            className="card p-6 hover:shadow-soft-lg transition-shadow duration-200 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700"
-                        >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div className="flex-1">
-                                    <div className="flex items-start gap-3">
-                                        <div className="flex-shrink-0 w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center">
-                                            <Calendar className="h-6 w-6 text-primary-600 dark:text-primary-400" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h3 className="font-semibold text-gray-900 dark:text-white">Customer Name</h3>
-                                                <span
-                                                    className={cn(
-                                                        'px-2 py-0.5 text-xs font-medium rounded-lg border',
-                                                        statusColors[appointment.status]
-                                                    )}
-                                                >
-                                                    {appointment.status}
-                                                </span>
+                    {loading ? (
+                        <div className="text-center py-12">
+                            <p className="text-gray-500 dark:text-gray-400">Loading appointments...</p>
+                        </div>
+                    ) : error ? (
+                        <div className="card p-6 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800">
+                            <p className="text-danger-700 dark:text-danger-400">{error}</p>
+                        </div>
+                    ) : filteredAppointments.length === 0 ? (
+                        <div className="card p-12 text-center bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+                            <Calendar className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                            <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">No Appointments</h3>
+                            <p className="text-gray-500 dark:text-gray-400">
+                                No appointments found for the selected date and status.
+                            </p>
+                        </div>
+                    ) : (
+                        filteredAppointments.map((appointment, index) => (
+                            <motion.div
+                                key={appointment.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: index * 0.05 }}
+                                className="card p-6 hover:shadow-soft-lg transition-shadow duration-200 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700"
+                            >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="flex-1">
+                                        <div className="flex items-start gap-3">
+                                            <div className="flex-shrink-0 w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-xl flex items-center justify-center">
+                                                <Calendar className="h-6 w-6 text-primary-600 dark:text-primary-400" />
                                             </div>
-                                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                                                {formatTime(appointment.startTime)} • {appointment.duration} min • Stylist Name
-                                            </p>
-                                            <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
-                                                Services: {appointment.services.join(', ')}
-                                            </p>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h3 className="font-semibold text-gray-900 dark:text-white">
+                                                        {appointment.customer?.name || 'Unknown Customer'}
+                                                    </h3>
+                                                    <span
+                                                        className={cn(
+                                                            'px-2 py-0.5 text-xs font-medium rounded-lg border',
+                                                            statusColors[appointment.status as AppointmentStatus]
+                                                        )}
+                                                    >
+                                                        {appointment.status}
+                                                    </span>
+                                                </div>
+                                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                                    {formatTime(appointment.start_time)} • {appointment.duration} min • {appointment.stylist?.name || 'Stylist'}
+                                                </p>
+                                                <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                                                    Services: {Array.isArray(appointment.services) ? appointment.services.length : 0} selected
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleViewAppointment(appointment)}
+                                        >
+                                            View
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleEditAppointment(appointment)}
+                                        >
+                                            Edit
+                                        </Button>
+                                    </div>
                                 </div>
-                                <div className="flex gap-2">
-                                    <Button variant="outline" size="sm">
-                                        View
-                                    </Button>
-                                    <Button variant="ghost" size="sm">
-                                        Edit
-                                    </Button>
-                                </div>
-                            </div>
-                        </motion.div>
-                    ))}
+                            </motion.div>
+                        ))
+                    )}
                 </div>
             )}
 
-            {/* Calendar View Placeholder */}
+            {/* Calendar View */}
             {view === 'calendar' && (
-                <div className="card p-12 text-center bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
-                    <Calendar className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Calendar View</h3>
-                    <p className="text-gray-500">
-                        Interactive calendar view with drag-and-drop functionality coming soon
-                    </p>
-                </div>
+                <CalendarView
+                    appointments={appointments}
+                    selectedDate={selectedDate}
+                    onDateChange={setSelectedDate}
+                    onAppointmentClick={handleViewAppointment}
+                />
             )}
 
             {/* Create Appointment Modal */}
             <CreateAppointmentModal
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
+                onSuccess={handleAppointmentCreated}
+            />
+
+            {/* Appointment Details Modal */}
+            <AppointmentDetailsModal
+                isOpen={showDetailsModal}
+                onClose={() => {
+                    setShowDetailsModal(false);
+                    setSelectedAppointment(null);
+                }}
+                appointment={selectedAppointment}
+                onEdit={() => handleEditAppointment(selectedAppointment)}
+                onDelete={() => handleDeleteClick()}
+                onStatusUpdate={handleStatusUpdate}
+            />
+
+            {/* Edit Appointment Modal */}
+            <EditAppointmentModal
+                isOpen={showEditModal}
+                onClose={() => {
+                    setShowEditModal(false);
+                    setSelectedAppointment(null);
+                }}
+                appointment={selectedAppointment}
+                onSuccess={() => {
+                    setShowEditModal(false);
+                    setSelectedAppointment(null);
+                    fetchAppointments();
+                }}
+            />
+
+            {/* Delete Confirmation Dialog */}
+            <ConfirmationDialog
+                isOpen={showDeleteDialog}
+                onClose={() => setShowDeleteDialog(false)}
+                onConfirm={handleDeleteConfirm}
+                title="Delete Appointment?"
+                message={`Are you sure you want to delete the appointment for ${selectedAppointment?.customer?.name || 'this customer'}? This action cannot be undone.`}
+                confirmText="Yes, Delete"
+                cancelText="Cancel"
+                variant="danger"
+                loading={deleteLoading}
             />
         </div>
     );

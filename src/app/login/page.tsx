@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Scissors } from 'lucide-react';
+import { Mail, Lock, Scissors, AlertCircle } from 'lucide-react';
 import Input from '@/components/shared/Input';
 import Button from '@/components/shared/Button';
 
@@ -14,22 +14,65 @@ export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [emailError, setEmailError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+
+    // Email validation
+    const validateEmail = (email: string): boolean => {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    };
+
+    const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newEmail = e.target.value;
+        setEmail(newEmail);
+        setEmailError('');
+        setError('');
+
+        // Validate email on blur or after typing
+        if (newEmail && !validateEmail(newEmail)) {
+            setEmailError('Please enter a valid email address');
+        }
+    };
+
+    const handleEmailBlur = () => {
+        if (email && !validateEmail(email)) {
+            setEmailError('Please enter a valid email address');
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setEmailError('');
+
+        // Validate email before submission
+        if (!email) {
+            setEmailError('Email is required');
+            return;
+        }
+
+        if (!validateEmail(email)) {
+            setEmailError('Please enter a valid email address');
+            return;
+        }
+
+        if (!password) {
+            setError('Password is required');
+            return;
+        }
+
         setIsLoading(true);
 
         try {
-            const success = await login(email, password);
-            if (success) {
+            const result = await login(email, password);
+            if (result.success) {
                 router.push('/dashboard');
             } else {
-                setError('Invalid email or password');
+                setError(result.error || 'Login failed. Please try again.');
             }
         } catch (err) {
-            setError('An error occurred. Please try again.');
+            setError('An unexpected error occurred. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -66,35 +109,61 @@ export default function LoginPage() {
                     <h2 className="text-2xl font-bold text-gray-900 mb-6">Welcome Back</h2>
 
                     <form onSubmit={handleSubmit} className="space-y-5">
-                        <Input
-                            type="email"
-                            label="Email Address"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            leftIcon={<Mail className="h-5 w-5" />}
-                            placeholder="you@example.com"
-                            required
-                            autoComplete="email"
-                        />
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Email Address
+                            </label>
+                            <Input
+                                type="email"
+                                value={email}
+                                onChange={handleEmailChange}
+                                onBlur={handleEmailBlur}
+                                leftIcon={<Mail className="h-5 w-5 text-gray-400" />}
+                                placeholder="you@example.com"
+                                required
+                                autoComplete="email"
+                                className={`bg-white text-gray-900 border-gray-300 dark:bg-white dark:text-gray-900 dark:border-gray-300 dark:focus:ring-primary-500 ${emailError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''
+                                    }`}
+                            />
+                            {emailError && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -5 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="flex items-center gap-1 mt-1.5 text-red-600 text-sm"
+                                >
+                                    <AlertCircle className="h-4 w-4" />
+                                    <span>{emailError}</span>
+                                </motion.div>
+                            )}
+                        </div>
 
-                        <Input
-                            type="password"
-                            label="Password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            leftIcon={<Lock className="h-5 w-5" />}
-                            placeholder="••••••••"
-                            required
-                            autoComplete="current-password"
-                        />
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Password
+                            </label>
+                            <Input
+                                type="password"
+                                value={password}
+                                onChange={(e) => {
+                                    setPassword(e.target.value);
+                                    setError('');
+                                }}
+                                leftIcon={<Lock className="h-5 w-5 text-gray-400" />}
+                                placeholder="••••••••"
+                                required
+                                autoComplete="current-password"
+                                className="bg-white text-gray-900 border-gray-300 dark:bg-white dark:text-gray-900 dark:border-gray-300 dark:focus:ring-primary-500"
+                            />
+                        </div>
 
                         {error && (
                             <motion.div
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="p-3 bg-danger-50 border border-danger-200 rounded-xl text-danger-700 text-sm"
+                                className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
                             >
-                                {error}
+                                <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                                <span>{error}</span>
                             </motion.div>
                         )}
 
@@ -104,21 +173,11 @@ export default function LoginPage() {
                             size="lg"
                             className="w-full"
                             isLoading={isLoading}
+                            disabled={isLoading || !!emailError}
                         >
-                            Sign In
+                            {isLoading ? 'Signing in...' : 'Sign In'}
                         </Button>
                     </form>
-
-                    {/* Demo Credentials */}
-                    <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                        <p className="text-xs font-semibold text-gray-700 mb-2">Demo Credentials:</p>
-                        <div className="space-y-1 text-xs text-gray-600">
-                            <p>Owner: owner@salonflow.com / owner123</p>
-                            <p>Manager: manager@salonflow.com / manager123</p>
-                            <p>Receptionist: receptionist@salonflow.com / receptionist123</p>
-                            <p>Stylist: stylist@salonflow.com / stylist123</p>
-                        </div>
-                    </div>
                 </motion.div>
 
                 <p className="text-center text-primary-100 text-sm mt-6">

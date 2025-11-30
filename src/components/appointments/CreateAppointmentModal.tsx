@@ -1,42 +1,171 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Calendar, Clock, User, Scissors } from 'lucide-react';
+import { X, Calendar, Clock, User, Scissors, CheckCircle } from 'lucide-react';
 import Modal from '@/components/shared/Modal';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
+import { appointmentsService } from '@/services/appointments';
+import { customersService } from '@/services/customers';
+import { servicesService } from '@/services/services';
+import { staffService } from '@/services/staff';
+import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+import TimeSlotPicker from '@/components/scheduling/TimeSlotPicker';
 
 interface CreateAppointmentModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onSuccess?: () => void;
 }
 
-export default function CreateAppointmentModal({ isOpen, onClose }: CreateAppointmentModalProps) {
+export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: CreateAppointmentModalProps) {
+    const { user } = useAuth();
+    const [step, setStep] = useState<'selection' | 'review'>('selection');
     const [formData, setFormData] = useState({
         customerName: '',
         customerPhone: '',
         date: '',
         time: '',
-        service: '',
-        stylist: '',
+        serviceId: '',
+        stylistId: '',
         notes: '',
     });
+    const [loading, setLoading] = useState(false);
+    const [services, setServices] = useState<any[]>([]);
+    const [stylists, setStylists] = useState<any[]>([]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // Fetch services and stylists when modal opens
+    useEffect(() => {
+        if (isOpen) {
+            fetchServices();
+            fetchStylists();
+            setStep('selection'); // Reset step on open
+        }
+    }, [isOpen]);
+
+    const fetchServices = async () => {
+        try {
+            const data = await servicesService.getServices();
+            setServices(data || []);
+        } catch (error) {
+            console.error('Error fetching services:', error);
+        }
+    };
+
+    const fetchStylists = async () => {
+        try {
+            // Pass date to filter unavailable stylists
+            const data = await staffService.getStylists(undefined, formData.date || undefined);
+            setStylists(data || []);
+        } catch (error) {
+            console.error('Error fetching stylists:', error);
+        }
+    };
+
+    // Refresh stylists when date changes
+    useEffect(() => {
+        if (formData.date) {
+            fetchStylists();
+        }
+    }, [formData.date]);
+
+    const handleReview = (e: React.FormEvent) => {
         e.preventDefault();
-        // TODO: Add appointment creation logic
-        console.log('Creating appointment:', formData);
-        onClose();
-        // Reset form
-        setFormData({
-            customerName: '',
-            customerPhone: '',
-            date: '',
-            time: '',
-            service: '',
-            stylist: '',
-            notes: '',
+        setStep('review');
+    };
+
+    const handleSubmit = async () => {
+        if (!user) {
+            alert('You must be logged in');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // Check if customer exists or create new one
+            let customer = await customersService.getCustomerByPhone(formData.customerPhone);
+
+            if (!customer) {
+                customer = await customersService.createCustomer({
+                    name: formData.customerName,
+                    phone: formData.customerPhone,
+                });
+            }
+
+            // Get service duration
+            const selectedService = services.find(s => s.id === formData.serviceId);
+            const duration = selectedService?.duration || 60;
+
+            // Get branch ID
+            let branchId = user.branchId;
+            if (!branchId) {
+                // If user has no branch, try to get the default one
+                const { data: branches } = await supabase
+                    .from('branches')
+                    .select('id')
+                    .limit(1)
+                    .single();
+
+                if (branches) {
+                    branchId = branches.id;
+                } else {
+                    throw new Error('No branch found. Please contact support.');
+                }
+            }
+
+            // Create appointment
+            await appointmentsService.createAppointment({
+                customer_id: customer.id,
+                stylist_id: formData.stylistId,
+                branch_id: branchId!,
+                services: [formData.serviceId],
+                appointment_date: formData.date,
+                start_time: formData.time,
+                duration,
+                notes: formData.notes || undefined,
+            });
+
+            // Reset form and close
+            setFormData({
+                customerName: '',
+                customerPhone: '',
+                date: '',
+                time: '',
+                serviceId: '',
+                stylistId: '',
+                notes: '',
+            });
+            setStep('selection');
+            onClose();
+            onSuccess?.();
+        } catch (error: any) {
+            console.error('Error creating appointment:', JSON.stringify(error, null, 2));
+            alert(error.message || 'Failed to create appointment');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const selectedService = services.find(s => s.id === formData.serviceId);
+    const selectedStylist = stylists.find(s => s.id === formData.stylistId);
+
+    const formatTime = (time: string) => {
+        if (!time) return '';
+        const [hours, minutes] = time.split(':').map(Number);
+        const period = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+    };
+
+    const formatDate = (dateStr: string) => {
+        if (!dateStr) return '';
+        return new Date(dateStr).toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
         });
     };
 
@@ -44,116 +173,192 @@ export default function CreateAppointmentModal({ isOpen, onClose }: CreateAppoin
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title="New Appointment"
+            title={step === 'review' ? "Review Appointment" : "New Appointment"}
             size="lg"
         >
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Customer Name */}
-                    <Input
-                        label="Customer Name"
-                        type="text"
-                        value={formData.customerName}
-                        onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
-                        placeholder="Enter customer name"
-                        leftIcon={<User className="h-5 w-5" />}
-                        required
-                    />
-
-                    {/* Customer Phone */}
-                    <Input
-                        label="Phone Number"
-                        type="tel"
-                        value={formData.customerPhone}
-                        onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
-                        placeholder="Enter phone number"
-                        required
-                    />
-
-                    {/* Date */}
-                    <Input
-                        label="Date"
-                        type="date"
-                        value={formData.date}
-                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                        leftIcon={<Calendar className="h-5 w-5" />}
-                        required
-                    />
-
-                    {/* Time */}
-                    <Input
-                        label="Time"
-                        type="time"
-                        value={formData.time}
-                        onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                        leftIcon={<Clock className="h-5 w-5" />}
-                        required
-                    />
-
-                    {/* Service */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                            Service
-                        </label>
-                        <select
-                            value={formData.service}
-                            onChange={(e) => setFormData({ ...formData, service: e.target.value })}
-                            className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900"
+            {step === 'selection' ? (
+                <form onSubmit={handleReview} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Customer Name */}
+                        <Input
+                            label="Customer Name"
+                            type="text"
+                            value={formData.customerName}
+                            onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
+                            placeholder="Enter customer name"
+                            leftIcon={<User className="h-5 w-5" />}
                             required
-                        >
-                            <option value="">Select service</option>
-                            <option value="haircut">Hair Cut</option>
-                            <option value="styling">Hair Styling</option>
-                            <option value="coloring">Hair Coloring</option>
-                            <option value="beard">Beard Trim</option>
-                            <option value="facial">Facial</option>
-                            <option value="bridal">Bridal Makeup</option>
-                        </select>
+                        />
+
+                        {/* Customer Phone */}
+                        <Input
+                            label="Phone Number"
+                            type="tel"
+                            value={formData.customerPhone}
+                            onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
+                            placeholder="Enter phone number"
+                            required
+                        />
+
+                        {/* Date */}
+                        <Input
+                            label="Date"
+                            type="date"
+                            value={formData.date}
+                            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                            leftIcon={<Calendar className="h-5 w-5" />}
+                            min={new Date().toISOString().split('T')[0]}
+                            required
+                        />
+
+                        {/* Service */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Service
+                            </label>
+                            <select
+                                value={formData.serviceId}
+                                onChange={(e) => setFormData({ ...formData, serviceId: e.target.value })}
+                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
+                                required
+                            >
+                                <option value="">Select service</option>
+                                {services.map((service) => (
+                                    <option key={service.id} value={service.id}>
+                                        {service.name} - Rs {service.price}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Stylist */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Stylist
+                            </label>
+                            <select
+                                value={formData.stylistId}
+                                onChange={(e) => setFormData({ ...formData, stylistId: e.target.value })}
+                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
+                                required
+                            >
+                                <option value="">Select stylist</option>
+                                {stylists.map((stylist) => (
+                                    <option key={stylist.id} value={stylist.id}>
+                                        {stylist.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
 
-                    {/* Stylist */}
+                    {/* Time Slot Picker - shown after date, stylist, and service selected */}
+                    {formData.date && formData.stylistId && formData.serviceId && (
+                        <div className="col-span-full">
+                            <TimeSlotPicker
+                                stylistId={formData.stylistId}
+                                date={formData.date}
+                                serviceDuration={services.find(s => s.id === formData.serviceId)?.duration || 60}
+                                onSelect={(time) => setFormData({ ...formData, time })}
+                                selectedTime={formData.time}
+                            />
+                            {/* Hidden required input to enforce time selection */}
+                            <input
+                                type="text"
+                                value={formData.time}
+                                required
+                                className="opacity-0 h-0 w-0 absolute"
+                                onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Please select a time slot')}
+                                onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
+                            />
+                        </div>
+                    )}
+
+                    {/* Notes */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                            Stylist
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Notes (Optional)
                         </label>
-                        <select
-                            value={formData.stylist}
-                            onChange={(e) => setFormData({ ...formData, stylist: e.target.value })}
-                            className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900"
-                            required
+                        <textarea
+                            value={formData.notes}
+                            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                            placeholder="Add any special notes..."
+                            rows={3}
+                            className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors resize-none text-gray-900 dark:text-white"
+                        />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <Button type="button" variant="outline" onClick={onClose}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" variant="primary">
+                            Review Appointment
+                        </Button>
+                    </div>
+                </form>
+            ) : (
+                <div className="space-y-6">
+                    {/* Review Summary */}
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-6 space-y-4">
+                        <div className="grid grid-cols-2 gap-6">
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Customer</h4>
+                                <p className="text-base font-semibold text-gray-900 dark:text-white">{formData.customerName}</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-300">{formData.customerPhone}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Stylist</h4>
+                                <p className="text-base font-semibold text-gray-900 dark:text-white">{selectedStylist?.name}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Date & Time</h4>
+                                <p className="text-base font-semibold text-gray-900 dark:text-white">{formatDate(formData.date)}</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-300">{formatTime(formData.time)}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Service</h4>
+                                <p className="text-base font-semibold text-gray-900 dark:text-white">{selectedService?.name}</p>
+                                <p className="text-sm text-gray-600 dark:text-gray-300">{selectedService?.duration} mins</p>
+                            </div>
+                        </div>
+
+                        {formData.notes && (
+                            <div className="pt-4 border-t border-gray-200 dark:border-gray-600">
+                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</h4>
+                                <p className="text-sm text-gray-700 dark:text-gray-300">{formData.notes}</p>
+                            </div>
+                        )}
+
+                        <div className="pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                            <span className="text-lg font-medium text-gray-900 dark:text-white">Total Price</span>
+                            <span className="text-2xl font-bold text-primary-600">Rs {selectedService?.price}</span>
+                        </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setStep('selection')}
+                            disabled={loading}
                         >
-                            <option value="">Select stylist</option>
-                            <option value="stylist1">Sarah Johnson</option>
-                            <option value="stylist2">Mike Smith</option>
-                            <option value="stylist3">Emily Davis</option>
-                        </select>
+                            Back to Edit
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="primary"
+                            onClick={handleSubmit}
+                            disabled={loading}
+                            leftIcon={loading ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Clock className="h-5 w-5" /></motion.div> : <CheckCircle className="h-5 w-5" />}
+                        >
+                            {loading ? 'Confirming...' : 'Confirm Booking'}
+                        </Button>
                     </div>
                 </div>
-
-                {/* Notes */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Notes (Optional)
-                    </label>
-                    <textarea
-                        value={formData.notes}
-                        onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                        placeholder="Add any special notes..."
-                        rows={3}
-                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors resize-none text-gray-900"
-                    />
-                </div>
-
-                {/* Actions */}
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                    <Button type="button" variant="outline" onClick={onClose}>
-                        Cancel
-                    </Button>
-                    <Button type="submit" variant="primary">
-                        Create Appointment
-                    </Button>
-                </div>
-            </form>
+            )}
         </Modal>
     );
 }

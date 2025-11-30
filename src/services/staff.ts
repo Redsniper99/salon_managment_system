@@ -1,0 +1,218 @@
+import { supabase } from '@/lib/supabase';
+import { createStaffAction, deleteStaffAction } from '@/app/actions/staff';
+import { notificationsService } from './notifications';
+
+// Utility to generate random password
+function generatePassword(): string {
+    const length = 12;
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+        password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return password;
+}
+
+export const staffService = {
+    /**
+     * Get all staff members
+     */
+    async getStaff(branchId?: string) {
+        let query = supabase
+            .from('staff')
+            .select('*')
+            .eq('is_active', true)
+            .order('name');
+
+        if (branchId) {
+            query = query.eq('branch_id', branchId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+        return data;
+    },
+
+    /**
+     * Get stylists only (optionally filtered by availability on a specific date)
+     */
+    async getStylists(branchId?: string, date?: string) {
+        let query = supabase
+            .from('staff')
+            .select('*')
+            .eq('role', 'Stylist')
+            .eq('is_active', true)
+            .order('name');
+
+        if (branchId) {
+            query = query.eq('branch_id', branchId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        // If date is provided, filter out unavailable stylists
+        if (date && data) {
+            const { data: unavailable } = await supabase
+                .from('stylist_unavailability')
+                .select('stylist_id')
+                .eq('unavailable_date', date);
+
+            const unavailableIds = new Set((unavailable || []).map(u => u.stylist_id));
+            return data.filter(stylist => !unavailableIds.has(stylist.id));
+        }
+
+        return data;
+    },
+
+    /**
+     * Get staff member by ID
+     */
+    async getStaffById(id: string) {
+        const { data, error } = await supabase
+            .from('staff')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+        return data;
+    },
+
+    /**
+     * Get staff member by email
+     */
+    async getStaffByEmail(email: string) {
+        const { data, error } = await supabase
+            .from('staff')
+            .select('*')
+            .eq('email', email)
+            .eq('is_active', true)
+            .single();
+
+        if (error) throw error;
+        return data;
+    },
+
+    /**
+     * Check stylist availability for a given date/time
+     */
+    async checkAvailability(stylistId: string, date: string, startTime: string, duration: number) {
+        const { data, error } = await supabase
+            .from('appointments')
+            .select('*')
+            .eq('stylist_id', stylistId)
+            .eq('appointment_date', date)
+            .in('status', ['Pending', 'Confirmed', 'InService']);
+
+        if (error) throw error;
+
+        // Check for time conflicts
+        // This is a simple check; you might want more sophisticated logic
+        return data?.length === 0;
+    },
+
+    /**
+     * Create new staff member with auto auth account creation
+     */
+    async createStaff(staffData: {
+        name: string;
+        email: string;
+        phone: string;
+        role: 'Manager' | 'Receptionist' | 'Stylist';
+        branch_id: string;
+        specializations?: string[];
+        working_days?: string[];
+        working_hours?: { start: string; end: string };
+    }): Promise<{ success: boolean; message: string; credentials?: { email: string; password: string } }> {
+        return await createStaffAction(staffData);
+    },
+
+    /**
+     * Update staff member details
+     */
+    async updateStaff(id: string, updates: {
+        name?: string;
+        phone?: string;
+        role?: string;
+        branch_id?: string;
+        specializations?: string[];
+        working_days?: string[];
+        working_hours?: { start: string; end: string };
+    }): Promise<{ success: boolean; message: string }> {
+        try {
+            // Update staff entry
+            const { error: staffError } = await supabase
+                .from('staff')
+                .update(updates)
+                .eq('id', id);
+
+            if (staffError) throw staffError;
+
+            // If name or role changed, update profile too
+            if (updates.name || updates.role) {
+                const { data: staff } = await supabase
+                    .from('staff')
+                    .select('profile_id')
+                    .eq('id', id)
+                    .single();
+
+                if (staff?.profile_id) {
+                    const profileUpdates: any = {};
+                    if (updates.name) profileUpdates.name = updates.name;
+                    if (updates.role) profileUpdates.role = updates.role;
+
+                    await supabase
+                        .from('profiles')
+                        .update(profileUpdates)
+                        .eq('id', staff.profile_id);
+                }
+            }
+
+            return {
+                success: true,
+                message: 'Staff member updated successfully',
+            };
+        } catch (error: any) {
+            console.error('Error updating staff:', error);
+            return {
+                success: false,
+                message: error.message || 'Failed to update staff member',
+            };
+        }
+    },
+
+    /**
+     * Deactivate staff member (soft delete)
+     */
+    async deactivateStaff(id: string): Promise<{ success: boolean; message: string }> {
+        try {
+            const { error } = await supabase
+                .from('staff')
+                .update({ is_active: false })
+                .eq('id', id);
+
+            if (error) throw error;
+
+            return {
+                success: true,
+                message: 'Staff member deactivated successfully',
+            };
+        } catch (error: any) {
+            console.error('Error deactivating staff:', error);
+            return {
+                success: false,
+                message: error.message || 'Failed to deactivate staff member',
+            };
+        }
+    },
+
+    /**
+     * Delete staff member permanently
+     */
+    async deleteStaff(id: string): Promise<{ success: boolean; message: string }> {
+        return await deleteStaffAction(id);
+    },
+};

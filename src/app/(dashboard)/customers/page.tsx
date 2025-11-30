@@ -1,63 +1,113 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Eye, Phone, Mail } from 'lucide-react';
+import { Plus, Search, Eye, Phone, Mail, Edit, Trash2 } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
+import ConfirmationDialog from '@/components/shared/ConfirmationDialog';
+import AddCustomerModal from '@/components/customers/AddCustomerModal';
+import CustomerDetailsModal from '@/components/customers/CustomerDetailsModal';
 import { Customer } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
-
-// Mock data
-const mockCustomers: Customer[] = [
-    {
-        id: '1',
-        name: 'Anjali Perera',
-        phone: '+94 77 123 4567',
-        email: 'anjali@example.com',
-        gender: 'Female',
-        totalVisits: 12,
-        totalSpent: 18500,
-        lastVisit: '2024-11-20',
-        createdAt: '2024-01-15',
-    },
-    {
-        id: '2',
-        name: 'Kasun Silva',
-        phone: '+94 77 234 5678',
-        email: 'kasun@example.com',
-        gender: 'Male',
-        totalVisits: 8,
-        totalSpent: 6200,
-        lastVisit: '2024-11-18',
-        createdAt: '2024-03-10',
-    },
-    {
-        id: '3',
-        name: 'Nimal Fernando',
-        phone: '+94 77 345 6789',
-        gender: 'Male',
-        totalVisits: 15,
-        totalSpent: 22000,
-        lastVisit: '2024-11-22',
-        createdAt: '2023-12-05',
-    },
-];
+import { customersService } from '@/services/customers';
+import { useToast } from '@/context/ToastContext';
 
 export default function CustomersPage() {
+    const { showToast } = useToast();
+    const [customers, setCustomers] = useState<Customer[]>([]);
+    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
 
-    const filteredCustomers = mockCustomers.filter((customer) => {
-        if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            return (
-                customer.name.toLowerCase().includes(query) ||
-                customer.phone.includes(query) ||
-                customer.email?.toLowerCase().includes(query)
-            );
+    // Modal states
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+    const [deleteLoading, setDeleteLoading] = useState(false);
+
+    useEffect(() => {
+        fetchCustomers();
+    }, [searchQuery]);
+
+    const fetchCustomers = async () => {
+        try {
+            setLoading(true);
+            let result;
+            if (searchQuery) {
+                const data = await customersService.searchCustomers(searchQuery);
+                result = data;
+            } else {
+                const response = await customersService.getCustomers();
+                result = response.data;
+            }
+
+            // Map Supabase snake_case to camelCase
+            const mappedCustomers = (result || []).map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                phone: c.phone,
+                email: c.email,
+                gender: c.gender,
+                totalVisits: c.total_visits || 0,
+                totalSpent: c.total_spent || 0,
+                lastVisit: c.last_visit,
+                createdAt: c.created_at,
+                preferences: c.preferences
+            }));
+
+            setCustomers(mappedCustomers);
+        } catch (error) {
+            console.error('Error fetching customers:', error);
+            showToast('Failed to load customers', 'error');
+        } finally {
+            setLoading(false);
         }
-        return true;
-    });
+    };
+
+    const handleAdd = () => {
+        setSelectedCustomer(null);
+        setShowAddModal(true);
+    };
+
+    const handleEdit = (customer: Customer) => {
+        setSelectedCustomer(customer);
+        setShowAddModal(true);
+    };
+
+    const handleView = (customer: Customer) => {
+        setSelectedCustomer(customer);
+        setShowDetailsModal(true);
+    };
+
+    const handleDeleteClick = (customer: Customer) => {
+        setSelectedCustomer(customer);
+        setShowDeleteDialog(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!selectedCustomer) return;
+
+        setDeleteLoading(true);
+        try {
+            await customersService.deleteCustomer(selectedCustomer.id);
+            showToast('Customer deleted successfully', 'success');
+            setShowDeleteDialog(false);
+            setSelectedCustomer(null);
+            fetchCustomers();
+        } catch (error: any) {
+            console.error('Error deleting customer:', error);
+            showToast(error.message || 'Failed to delete customer', 'error');
+        } finally {
+            setDeleteLoading(false);
+        }
+    };
+
+    const handleModalSuccess = () => {
+        fetchCustomers();
+        setShowAddModal(false);
+        setSelectedCustomer(null);
+    };
 
     return (
         <div className="space-y-6">
@@ -67,7 +117,11 @@ export default function CustomersPage() {
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Customers</h1>
                     <p className="text-gray-600 dark:text-gray-400 mt-1">Manage customer database</p>
                 </div>
-                <Button variant="primary" leftIcon={<Plus className="h-5 w-5" />}>
+                <Button
+                    variant="primary"
+                    leftIcon={<Plus className="h-5 w-5" />}
+                    onClick={handleAdd}
+                >
                     Add Customer
                 </Button>
             </div>
@@ -87,21 +141,31 @@ export default function CustomersPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Customers</p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{mockCustomers.length}</p>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{customers.length}</p>
                 </div>
                 <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">This Month</p>
-                    <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">+8</p>
+                    <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                        +{customers.filter(c => new Date(c.createdAt).getMonth() === new Date().getMonth()).length}
+                    </p>
                 </div>
                 <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Active This Week</p>
-                    <p className="text-3xl font-bold text-success-600 dark:text-success-400">24</p>
+                    <p className="text-3xl font-bold text-success-600 dark:text-success-400">
+                        {customers.filter(c => {
+                            if (!c.lastVisit) return false;
+                            const lastVisit = new Date(c.lastVisit);
+                            const oneWeekAgo = new Date();
+                            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+                            return lastVisit > oneWeekAgo;
+                        }).length}
+                    </p>
                 </div>
             </div>
 
             {/* Customers List */}
             <div className="space-y-4">
-                {filteredCustomers.map((customer, index) => (
+                {customers.map((customer, index) => (
                     <motion.div
                         key={customer.id}
                         initial={{ opacity: 0, y: 20 }}
@@ -157,13 +221,62 @@ export default function CustomersPage() {
                                     </div>
                                 </div>
                             </div>
-                            <Button variant="outline" size="sm" leftIcon={<Eye className="h-4 w-4" />}>
-                                View Details
-                            </Button>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    leftIcon={<Eye className="h-4 w-4" />}
+                                    onClick={() => handleView(customer)}
+                                >
+                                    View
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    leftIcon={<Edit className="h-4 w-4" />}
+                                    onClick={() => handleEdit(customer)}
+                                >
+                                    Edit
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    leftIcon={<Trash2 className="h-4 w-4 text-danger-600" />}
+                                    onClick={() => handleDeleteClick(customer)}
+                                >
+                                </Button>
+                            </div>
                         </div>
                     </motion.div>
                 ))}
             </div>
+
+            {/* Add/Edit Modal */}
+            <AddCustomerModal
+                isOpen={showAddModal}
+                onClose={() => setShowAddModal(false)}
+                onSuccess={handleModalSuccess}
+                customerToEdit={selectedCustomer}
+            />
+
+            {/* View Details Modal */}
+            <CustomerDetailsModal
+                isOpen={showDetailsModal}
+                onClose={() => setShowDetailsModal(false)}
+                customer={selectedCustomer}
+            />
+
+            {/* Delete Confirmation */}
+            <ConfirmationDialog
+                isOpen={showDeleteDialog}
+                onClose={() => setShowDeleteDialog(false)}
+                onConfirm={handleConfirmDelete}
+                title="Delete Customer?"
+                message={`Are you sure you want to delete "${selectedCustomer?.name}"? This action cannot be undone.`}
+                confirmText="Delete"
+                variant="danger"
+                loading={deleteLoading}
+            />
         </div>
     );
 }

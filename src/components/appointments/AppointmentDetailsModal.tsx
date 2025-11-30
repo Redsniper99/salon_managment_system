@@ -1,0 +1,186 @@
+'use client';
+
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { X, Calendar, Clock, User, Phone, Scissors, FileText, Edit, Trash2 } from 'lucide-react';
+import Modal from '@/components/shared/Modal';
+import Button from '@/components/shared/Button';
+import { Appointment, AppointmentStatus } from '@/lib/types';
+import { formatTime, formatDate } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+
+interface AppointmentDetailsModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    appointment: any;
+    onEdit: () => void;
+    onDelete: () => void;
+    onStatusUpdate: (status: AppointmentStatus) => Promise<void>;
+}
+
+const statusColors: Record<AppointmentStatus, string> = {
+    Pending: 'bg-warning-100 text-warning-700 border-warning-200 dark:bg-warning-900/30 dark:text-warning-400',
+    Confirmed: 'bg-secondary-100 text-secondary-700 border-secondary-200 dark:bg-secondary-900/30 dark:text-secondary-400',
+    InService: 'bg-primary-100 text-primary-700 border-primary-200 dark:bg-primary-900/30 dark:text-primary-400',
+    Completed: 'bg-success-100 text-success-700 border-success-200 dark:bg-success-900/30 dark:text-success-400',
+    Cancelled: 'bg-danger-100 text-danger-700 border-danger-200 dark:bg-danger-900/30 dark:text-danger-400',
+    NoShow: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300',
+};
+
+const allStatuses: AppointmentStatus[] = ['Pending', 'Confirmed', 'InService', 'Completed', 'Cancelled', 'NoShow'];
+
+export default function AppointmentDetailsModal({
+    isOpen,
+    onClose,
+    appointment,
+    onEdit,
+    onDelete,
+    onStatusUpdate
+}: AppointmentDetailsModalProps) {
+    const [updating, setUpdating] = useState(false);
+
+    if (!appointment) return null;
+
+    const handleStatusChange = async (newStatus: AppointmentStatus) => {
+        if (newStatus === appointment.status) return;
+
+        setUpdating(true);
+        try {
+            await onStatusUpdate(newStatus);
+        } finally {
+            setUpdating(false);
+        }
+    };
+
+    return (
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Appointment Details"
+            size="lg"
+        >
+            <div className="space-y-6">
+                {/* Status Section */}
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Status
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                        {allStatuses.map((status) => (
+                            <button
+                                key={status}
+                                onClick={() => handleStatusChange(status)}
+                                disabled={updating || status === appointment.status}
+                                className={cn(
+                                    'px-3 py-1.5 rounded-lg text-sm font-medium border-2 transition-all',
+                                    appointment.status === status
+                                        ? statusColors[status] + ' ring-2 ring-offset-2 ring-primary-500'
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-primary-400',
+                                    updating && 'opacity-50 cursor-not-allowed'
+                                )}
+                            >
+                                {status}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Customer Information */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                            <User className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Customer</h3>
+                        </div>
+                        <div className="space-y-2">
+                            <p className="text-gray-900 dark:text-white font-medium">
+                                {appointment.customer?.name || 'Unknown Customer'}
+                            </p>
+                            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                <Phone className="h-4 w-4" />
+                                <span>{appointment.customer?.phone || 'No phone'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                            <Scissors className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Stylist</h3>
+                        </div>
+                        <p className="text-gray-900 dark:text-white font-medium">
+                            {appointment.stylist?.name || 'Not assigned'}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Appointment Details */}
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                        <Calendar className="h-5 w-5 text-primary-600 dark:text-primary-400 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</p>
+                            <p className="text-gray-900 dark:text-white font-semibold">
+                                {formatDate(appointment.appointment_date)}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                        <Clock className="h-5 w-5 text-primary-600 dark:text-primary-400 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Time & Duration</p>
+                            <p className="text-gray-900 dark:text-white font-semibold">
+                                {formatTime(appointment.start_time)} ({appointment.duration} minutes)
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                        <FileText className="h-5 w-5 text-primary-600 dark:text-primary-400 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Services</p>
+                            <p className="text-gray-900 dark:text-white">
+                                {Array.isArray(appointment.services)
+                                    ? `${appointment.services.length} service(s) selected`
+                                    : 'No services specified'}
+                            </p>
+                        </div>
+                    </div>
+
+                    {appointment.notes && (
+                        <div className="flex items-start gap-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                            <FileText className="h-5 w-5 text-primary-600 dark:text-primary-400 mt-0.5" />
+                            <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Notes</p>
+                                <p className="text-gray-700 dark:text-gray-300 text-sm mt-1">
+                                    {appointment.notes}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <Button
+                        variant="outline"
+                        onClick={onEdit}
+                        leftIcon={<Edit className="h-4 w-4" />}
+                        className="flex-1"
+                    >
+                        Edit Appointment
+                    </Button>
+                    <Button
+                        variant="danger"
+                        onClick={onDelete}
+                        leftIcon={<Trash2 className="h-4 w-4" />}
+                        className="flex-1"
+                    >
+                        Delete
+                    </Button>
+                </div>
+            </div>
+        </Modal>
+    );
+}

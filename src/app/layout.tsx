@@ -14,19 +14,23 @@ export const metadata: Metadata = {
   description: "Modern salon management SaaS application for managing appointments, billing, staff, and customers",
 };
 
+import { ToastProvider } from '@/context/ToastContext';
+
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased overflow-hidden`}>
-        <ThemeProvider>
+        <ToastProvider>
           <AuthProvider>
-            {children}
+            <ThemeProvider>
+              {children}
+            </ThemeProvider>
           </AuthProvider>
-        </ThemeProvider>
+        </ToastProvider>
       </body>
     </html>
   );

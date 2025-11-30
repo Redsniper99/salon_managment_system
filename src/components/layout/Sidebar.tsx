@@ -16,6 +16,10 @@ import {
     Bell,
     BarChart3,
     CreditCard,
+    Settings,
+    DollarSign,
+    Target,
+    Megaphone,
     LucideIcon,
 } from 'lucide-react';
 
@@ -64,6 +68,18 @@ const navItems: NavItem[] = [
         allowedRoles: ['Owner', 'Manager', 'Receptionist'],
     },
     {
+        label: 'Earnings',
+        href: '/earnings',
+        icon: DollarSign,
+        allowedRoles: ['Owner', 'Manager', 'Stylist', 'Receptionist'],
+    },
+    {
+        label: 'Customer Segments',
+        href: '/segments',
+        icon: Target,
+        allowedRoles: ['Owner', 'Manager'],
+    },
+    {
         label: 'Promo Codes',
         href: '/promos',
         icon: Tag,
@@ -76,10 +92,22 @@ const navItems: NavItem[] = [
         allowedRoles: ['Owner', 'Manager'],
     },
     {
+        label: 'Campaigns',
+        href: '/campaigns',
+        icon: Megaphone,
+        allowedRoles: ['Owner', 'Manager'],
+    },
+    {
         label: 'Reports',
         href: '/reports',
         icon: BarChart3,
         allowedRoles: ['Owner', 'Manager'],
+    },
+    {
+        label: 'Settings',
+        href: '/settings',
+        icon: Settings,
+        allowedRoles: ['Owner', 'Stylist'],
     },
     {
         label: 'Subscription',

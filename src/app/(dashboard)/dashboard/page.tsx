@@ -1,43 +1,166 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import StatCard from '@/components/shared/StatCard';
+import { reportsService } from '@/services/reports';
+import { availabilityService } from '@/services/availability';
+import { staffService } from '@/services/staff';
+import { useAuth } from '@/lib/auth';
 import {
     DollarSign,
     Calendar,
     CheckCircle2,
     XCircle,
-    UserX,
     Scissors,
     Users,
 } from 'lucide-react';
 
+interface DashboardStats {
+    todayRevenue: number;
+    todayAppointments: number;
+    completed: number;
+    cancelled: number;
+    noShow: number;
+    topServices: { name: string; count: number; revenue: number }[];
+    topStylists: { name: string; revenue: number; appointments: number }[];
+}
+
 export default function DashboardPage() {
-    // Mock data - in production, this would come from an API
-    const stats = {
-        todayRevenue: 45750,
-        todayAppointments: 28,
-        completed: 18,
-        cancelled: 2,
-        noShow: 1,
-        topServices: [
-            { name: 'Bridal Makeup', count: 3, revenue: 18000 },
-            { name: 'Hair Styling', count: 12, revenue: 12000 },
-            { name: 'Beard Trim', count: 8, revenue: 4000 },
-        ],
-        topStylists: [
-            { name: 'Sarah Johnson', revenue: 15500, appointments: 8 },
-            { name: 'Mike Smith', revenue: 12300, appointments: 10 },
-            { name: 'Emma Davis', revenue: 11200, appointments: 7 },
-        ],
+    const { user } = useAuth();
+    const [stats, setStats] = useState<DashboardStats>({
+        todayRevenue: 0,
+        todayAppointments: 0,
+        completed: 0,
+        cancelled: 0,
+        noShow: 0,
+        topServices: [],
+        topStylists: [],
+    });
+    const [loading, setLoading] = useState(true);
+    const [isEmergencyUnavailable, setIsEmergencyUnavailable] = useState(false);
+    const [togglingEmergency, setTogglingEmergency] = useState(false);
+    const [staffId, setStaffId] = useState<string | null>(null);
+
+    useEffect(() => {
+        fetchDashboardData();
+    }, []);
+
+    useEffect(() => {
+        if (user?.role === 'Stylist') {
+            fetchStaffIdAndStatus();
+        }
+    }, [user]);
+
+    const fetchStaffIdAndStatus = async () => {
+        if (!user?.email) return;
+        try {
+            // Fetch staff record by email (assuming email is unique and shared)
+            // Or better, by profile_id if available in staff table
+            const staff = await staffService.getStaffByEmail(user.email);
+            if (staff) {
+                setStaffId(staff.id);
+                // Check status
+                const status = await availabilityService.getEmergencyStatus(staff.id);
+                setIsEmergencyUnavailable(status);
+            }
+        } catch (error) {
+            console.error('Error fetching staff info:', error);
+        }
     };
+
+    const fetchDashboardData = async () => {
+        try {
+            setLoading(true);
+            const today = new Date().toISOString().split('T')[0];
+
+            // Fetch basic stats
+            const basicStats = await reportsService.getDashboardStats();
+
+            // Fetch top services and stylists for today
+            const topServices = await reportsService.getTopServices(today + 'T00:00:00', today + 'T23:59:59');
+            const topStylists = await reportsService.getStaffPerformance(today, today);
+
+            setStats({
+                todayRevenue: basicStats.todayRevenue,
+                todayAppointments: basicStats.todayAppointments,
+                completed: basicStats.completedAppointments,
+                cancelled: basicStats.cancelledAppointments,
+                noShow: basicStats.noShowAppointments,
+                topServices: topServices.map(s => ({
+                    name: s.serviceName,
+                    count: s.count,
+                    revenue: s.revenue
+                })),
+                topStylists: topStylists.map(s => ({
+                    name: s.stylistName,
+                    revenue: s.revenue,
+                    appointments: s.appointmentCount
+                }))
+            });
+        } catch (error) {
+            console.error('Error fetching dashboard stats:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleEmergencyToggle = async () => {
+        if (!staffId) {
+            alert("Could not find your staff profile. Please contact admin.");
+            return;
+        }
+
+        setTogglingEmergency(true);
+        try {
+            const newStatus = !isEmergencyUnavailable;
+            await availabilityService.toggleEmergencyStatus(staffId, newStatus);
+            setIsEmergencyUnavailable(newStatus);
+        } catch (error) {
+            console.error('Error toggling emergency status:', error);
+            alert('Failed to update status. Please try again.');
+        } finally {
+            setTogglingEmergency(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
             {/* Page Header */}
-            <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-1">Welcome back! Here's what's happening today.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+                    <p className="text-gray-600 dark:text-gray-400 mt-1">Welcome back! Here&apos;s what&apos;s happening today.</p>
+                </div>
+
+                {/* Emergency Toggle for Stylists */}
+                {user?.role === 'Stylist' && (
+                    <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-100 dark:border-red-800">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-red-800 dark:text-red-300">Emergency Mode</span>
+                            <span className="text-xs text-red-600 dark:text-red-400">Stop new bookings</span>
+                        </div>
+                        <button
+                            onClick={handleEmergencyToggle}
+                            disabled={togglingEmergency}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${isEmergencyUnavailable ? 'bg-red-600' : 'bg-gray-200 dark:bg-gray-700'
+                                }`}
+                        >
+                            <span
+                                className={`${isEmergencyUnavailable ? 'translate-x-6' : 'translate-x-1'
+                                    } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                            />
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Stats Grid */}
@@ -98,7 +221,7 @@ export default function DashboardPage() {
                                         <div
                                             className="h-full bg-secondary-500 rounded-full transition-all duration-500"
                                             style={{
-                                                width: `${(service.revenue / stats.topServices[0].revenue) * 100}%`,
+                                                width: `${(service.revenue / (stats.topServices[0]?.revenue || 1)) * 100}%`,
                                             }}
                                         />
                                     </div>

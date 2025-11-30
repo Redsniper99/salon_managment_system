@@ -1,56 +1,113 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Search, Edit, Trash2 } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
+import ConfirmationDialog from '@/components/shared/ConfirmationDialog';
+import AddServiceModal from '@/components/services/AddServiceModal';
 import { Service } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-
-// Mock data
-const mockServices: Service[] = [
-    {
-        id: '1',
-        name: 'Hair Cut',
-        category: 'Hair',
-        price: 500,
-        duration: 30,
-        gender: 'Unisex',
-        isActive: true,
-    },
-    {
-        id: '2',
-        name: 'Bridal Makeup',
-        category: 'Bridal',
-        price: 6000,
-        duration: 120,
-        gender: 'Female',
-        isActive: true,
-    },
-    {
-        id: '3',
-        name: 'Beard Styling',
-        category: 'Beard',
-        price: 300,
-        duration: 20,
-        gender: 'Male',
-        isActive: true,
-    },
-];
+import { servicesService } from '@/services/services';
+import { useToast } from '@/context/ToastContext';
 
 export default function ServicesPage() {
+    const { showToast } = useToast();
+    const [services, setServices] = useState<Service[]>([]);
+    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
 
+    // Modal states
+    const [showModal, setShowModal] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [selectedService, setSelectedService] = useState<Service | null>(null);
+    const [deleteLoading, setDeleteLoading] = useState(false);
+
     const categories = ['All', 'Hair', 'Beard', 'Facial', 'Bridal', 'Kids', 'Spa', 'Other'];
 
-    const filteredServices = mockServices.filter((service) => {
-        if (selectedCategory !== 'All' && service.category !== selectedCategory) return false;
-        if (searchQuery && !service.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-        return true;
-    });
+    useEffect(() => {
+        fetchServices();
+    }, [selectedCategory, searchQuery]);
+
+    const fetchServices = async () => {
+        try {
+            setLoading(true);
+            let data;
+            if (selectedCategory !== 'All') {
+                data = await servicesService.getServicesByCategory(selectedCategory);
+            } else {
+                data = await servicesService.getServices();
+            }
+
+            // Map Supabase snake_case to camelCase
+            let mappedServices = (data || []).map((s: any) => ({
+                id: s.id,
+                name: s.name,
+                category: s.category,
+                price: s.price,
+                duration: s.duration,
+                gender: s.gender,
+                isActive: s.is_active,
+                description: s.description,
+            }));
+
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                mappedServices = mappedServices.filter((s: Service) =>
+                    s.name.toLowerCase().includes(query)
+                );
+            }
+
+            setServices(mappedServices);
+        } catch (error) {
+            console.error('Error fetching services:', error);
+            showToast('Failed to load services', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAdd = () => {
+        setSelectedService(null);
+        setShowModal(true);
+    };
+
+    const handleEdit = (service: Service) => {
+        setSelectedService(service);
+        setShowModal(true);
+    };
+
+    const handleDeleteClick = (service: Service) => {
+        setSelectedService(service);
+        setShowDeleteDialog(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!selectedService) return;
+
+        setDeleteLoading(true);
+        try {
+            await servicesService.deleteService(selectedService.id);
+            showToast('Service deleted successfully', 'success');
+            setShowDeleteDialog(false);
+            setSelectedService(null);
+            fetchServices();
+        } catch (error: any) {
+            console.error('Error deleting service:', error);
+            showToast(error.message || 'Failed to delete service', 'error');
+        } finally {
+            setDeleteLoading(false);
+        }
+    };
+
+    const handleModalSuccess = () => {
+        fetchServices();
+        setShowModal(false);
+        setSelectedService(null);
+    };
 
     return (
         <div className="space-y-6">
@@ -60,7 +117,11 @@ export default function ServicesPage() {
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Services</h1>
                     <p className="text-gray-600 dark:text-gray-400 mt-1">Manage salon services and pricing</p>
                 </div>
-                <Button variant="primary" leftIcon={<Plus className="h-5 w-5" />}>
+                <Button
+                    variant="primary"
+                    leftIcon={<Plus className="h-5 w-5" />}
+                    onClick={handleAdd}
+                >
                     Add Service
                 </Button>
             </div>
@@ -100,7 +161,7 @@ export default function ServicesPage() {
 
             {/* Services Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredServices.map((service, index) => (
+                {services.map((service, index) => (
                     <motion.div
                         key={service.id}
                         initial={{ opacity: 0, y: 20 }}
@@ -140,15 +201,46 @@ export default function ServicesPage() {
                         </div>
 
                         <div className="flex gap-2">
-                            <Button variant="outline" size="sm" className="flex-1" leftIcon={<Edit className="h-4 w-4" />}>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1"
+                                leftIcon={<Edit className="h-4 w-4" />}
+                                onClick={() => handleEdit(service)}
+                            >
                                 Edit
                             </Button>
-                            <Button variant="ghost" size="sm" leftIcon={<Trash2 className="h-4 w-4 text-danger-600" />}>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                leftIcon={<Trash2 className="h-4 w-4 text-danger-600" />}
+                                onClick={() => handleDeleteClick(service)}
+                            >
                             </Button>
                         </div>
                     </motion.div>
                 ))}
             </div>
+
+            {/* Add/Edit Modal */}
+            <AddServiceModal
+                isOpen={showModal}
+                onClose={() => setShowModal(false)}
+                onSuccess={handleModalSuccess}
+                serviceToEdit={selectedService}
+            />
+
+            {/* Delete Confirmation */}
+            <ConfirmationDialog
+                isOpen={showDeleteDialog}
+                onClose={() => setShowDeleteDialog(false)}
+                onConfirm={handleConfirmDelete}
+                title="Delete Service?"
+                message={`Are you sure you want to delete "${selectedService?.name}"? This action cannot be undone.`}
+                confirmText="Delete"
+                variant="danger"
+                loading={deleteLoading}
+            />
         </div>
     );
 }

@@ -2,94 +2,114 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, UserRole } from './types';
+import { supabase } from './supabase';
+import type { Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
     user: User | null;
-    login: (email: string, password: string) => Promise<boolean>;
-    logout: () => void;
+    login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+    logout: () => Promise<void>;
     isAuthenticated: boolean;
     hasRole: (roles: UserRole[]) => boolean;
+    loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock users for demo
-const MOCK_USERS: (User & { password: string })[] = [
-    {
-        id: '1',
-        email: 'owner@salonflow.com',
-        password: 'owner123',
-        name: 'John Owner',
-        role: 'Owner',
-        isActive: true,
-    },
-    {
-        id: '2',
-        email: 'manager@salonflow.com',
-        password: 'manager123',
-        name: 'Sarah Manager',
-        role: 'Manager',
-        branchId: 'branch-1',
-        isActive: true,
-    },
-    {
-        id: '3',
-        email: 'receptionist@salonflow.com',
-        password: 'receptionist123',
-        name: 'Emily Receptionist',
-        role: 'Receptionist',
-        branchId: 'branch-1',
-        isActive: true,
-    },
-    {
-        id: '4',
-        email: 'stylist@salonflow.com',
-        password: 'stylist123',
-        name: 'Mike Stylist',
-        role: 'Stylist',
-        branchId: 'branch-1',
-        isActive: true,
-    },
-];
-
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
-    const [isMounted, setIsMounted] = useState(false);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        setIsMounted(true);
-        // Check for stored user on mount
-        const storedUser = localStorage.getItem('salonflow_user');
-        if (storedUser) {
-            try {
-                setUser(JSON.parse(storedUser));
-            } catch (error) {
-                localStorage.removeItem('salonflow_user');
+        // Check active session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                fetchUserProfile(session);
+            } else {
+                setLoading(false);
             }
-        }
+        });
+
+        // Listen for auth changes
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session) {
+                fetchUserProfile(session);
+            } else {
+                setUser(null);
+                setLoading(false);
+            }
+        });
+
+        return () => subscription.unsubscribe();
     }, []);
 
-    const login = async (email: string, password: string): Promise<boolean> => {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 500));
+    const fetchUserProfile = async (session: Session) => {
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
 
-        const foundUser = MOCK_USERS.find(
-            u => u.email === email && u.password === password
-        );
+            if (error) throw error;
 
-        if (foundUser && foundUser.isActive) {
-            const { password: _, ...userWithoutPassword } = foundUser;
-            setUser(userWithoutPassword);
-            localStorage.setItem('salonflow_user', JSON.stringify(userWithoutPassword));
-            return true;
+            if (data) {
+                setUser({
+                    id: data.id,
+                    email: data.email,
+                    name: data.name,
+                    role: data.role as UserRole,
+                    branchId: data.branch_id || undefined,
+                    isActive: data.is_active,
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching user profile:', error);
+        } finally {
+            setLoading(false);
         }
-
-        return false;
     };
 
-    const logout = () => {
+    const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (error) {
+                // Map Supabase errors to user-friendly messages
+                if (error.message.includes('Invalid login credentials')) {
+                    return { success: false, error: 'Incorrect email or password' };
+                } else if (error.message.includes('Email not confirmed')) {
+                    return { success: false, error: 'Please verify your email address' };
+                } else if (error.message.includes('User not found')) {
+                    return { success: false, error: 'No account found with this email' };
+                } else {
+                    return { success: false, error: error.message };
+                }
+            }
+
+            if (data.session) {
+                await fetchUserProfile(data.session);
+                return { success: true };
+            }
+
+            return { success: false, error: 'Login failed. Please try again.' };
+        } catch (error) {
+            console.error('Login error:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.'
+            };
+        }
+    };
+
+    const logout = async () => {
+        await supabase.auth.signOut();
         setUser(null);
-        localStorage.removeItem('salonflow_user');
     };
 
     const hasRole = (roles: UserRole[]): boolean => {
@@ -105,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 logout,
                 isAuthenticated: !!user,
                 hasRole,
+                loading,
             }}
         >
             {children}
