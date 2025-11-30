@@ -12,13 +12,14 @@ import { supabase } from '@/lib/supabase';
 import { schedulingService } from '@/services/scheduling';
 import { availabilityService, AvailabilityRecord } from '@/services/availability';
 import { staffService } from '@/services/staff';
+import { UserRole } from '@/lib/types';
 
 interface ShowMessage {
     (type: 'success' | 'error', text: string): void;
 }
 
 interface PasswordChangeSectionProps {
-    hasRole: (roles: string[]) => boolean;
+    hasRole: (roles: UserRole[]) => boolean;
     showMessage: ShowMessage;
 }
 
@@ -791,8 +792,8 @@ function AvailabilitySettings({ user, showMessage }: AvailabilitySettingsProps) 
                         <div key={leave.id} className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-sm">
                             <div className="flex items-start gap-3">
                                 <div className={`p-2 rounded-lg ${leave.type === 'holiday' ? 'bg-purple-100 text-purple-600' :
-                                        leave.type === 'half_day' ? 'bg-orange-100 text-orange-600' :
-                                            'bg-gray-100 text-gray-600'
+                                    leave.type === 'half_day' ? 'bg-orange-100 text-orange-600' :
+                                        'bg-gray-100 text-gray-600'
                                     }`}>
                                     <CalendarDays className="h-5 w-5" />
                                 </div>

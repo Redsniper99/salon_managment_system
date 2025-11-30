@@ -171,7 +171,7 @@ export default function LoginPage() {
                             type="submit"
                             variant="primary"
                             size="lg"
-                            className="w-full bg-white text-white hover:bg-gray-100 font-bold shadow-lg shadow-black/20 border-none"
+                            className="w-full bg-white text-primary-950 hover:bg-gray-100 font-bold shadow-lg shadow-black/20 border-none"
                             isLoading={isLoading}
                             disabled={isLoading || !!emailError}
                         >
