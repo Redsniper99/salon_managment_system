@@ -28,18 +28,65 @@ export const campaignService = {
      */
     async getCampaigns() {
         try {
+            // First, try fetching campaigns without the join
             const { data, error } = await supabase
                 .from('campaigns')
-                .select(`
-                    *,
-                    notification_templates (name, message)
-                `)
+                .select('*')
                 .order('created_at', { ascending: false });
 
-            if (error) throw error;
+            if (error) {
+                console.error('Supabase error fetching campaigns:', {
+                    message: error.message,
+                    details: error.details,
+                    hint: error.hint,
+                    code: error.code,
+                    fullError: error
+                });
+                throw error;
+            }
+
+            console.log('Successfully fetched campaigns:', data?.length || 0);
+
+            // If campaigns have template_ids, try to fetch template details
+            if (data && data.length > 0) {
+                const templateIds = data
+                    .map(c => c.template_id)
+                    .filter(Boolean);
+
+                if (templateIds.length > 0) {
+                    try {
+                        const { data: templates } = await supabase
+                            .from('notification_templates')
+                            .select('id, name, message')
+                            .in('id', templateIds);
+
+                        if (templates) {
+                            // Attach template data to campaigns
+                            const templatesMap = new Map(templates.map(t => [t.id, t]));
+                            data.forEach(campaign => {
+                                if (campaign.template_id) {
+                                    campaign.notification_templates = templatesMap.get(campaign.template_id);
+                                }
+                            });
+                        }
+                    } catch (templateError) {
+                        // If templates can't be fetched, just continue without them
+                        console.warn('Could not fetch notification templates:', templateError);
+                    }
+                }
+            }
+
             return data || [];
-        } catch (error) {
-            console.error('Error fetching campaigns:', error);
+        } catch (error: any) {
+            console.error('Error fetching campaigns:', {
+                message: error?.message || 'Unknown error',
+                details: error?.details || 'No details available',
+                hint: error?.hint || 'No hint available',
+                code: error?.code || 'No code available',
+                errorType: typeof error,
+                errorConstructor: error?.constructor?.name,
+                fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+            });
             throw error;
         }
     },
@@ -49,20 +96,54 @@ export const campaignService = {
      */
     async getCampaignById(id: string) {
         try {
+            // Fetch campaign without joins first
             const { data, error } = await supabase
                 .from('campaigns')
-                .select(`
-                    *,
-                    notification_templates (*),
-                    campaign_sends (*)
-                `)
+                .select('*')
                 .eq('id', id)
                 .single();
 
             if (error) throw error;
+
+            if (data) {
+                // Try to fetch related data separately
+                try {
+                    if (data.template_id) {
+                        const { data: template } = await supabase
+                            .from('notification_templates')
+                            .select('*')
+                            .eq('id', data.template_id)
+                            .single();
+
+                        if (template) {
+                            data.notification_templates = template;
+                        }
+                    }
+
+                    const { data: sends } = await supabase
+                        .from('campaign_sends')
+                        .select('*')
+                        .eq('campaign_id', id);
+
+                    if (sends) {
+                        data.campaign_sends = sends;
+                    }
+                } catch (relatedError) {
+                    console.warn('Could not fetch related campaign data:', relatedError);
+                }
+            }
+
             return data;
-        } catch (error) {
-            console.error('Error fetching campaign:', error);
+        } catch (error: any) {
+            console.error('Error fetching campaign:', {
+                message: error?.message || 'Unknown error',
+                details: error?.details || 'No details available',
+                hint: error?.hint || 'No hint available',
+                code: error?.code || 'No code available',
+                errorType: typeof error,
+                errorConstructor: error?.constructor?.name,
+                fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+            });
             throw error;
         }
     },
@@ -144,8 +225,13 @@ export const campaignService = {
 
             if (error) throw error;
             return data;
-        } catch (error) {
-            console.error('Error creating campaign:', error);
+        } catch (error: any) {
+            console.error('Error creating campaign:', {
+                message: error.message,
+                details: error.details,
+                hint: error.hint,
+                code: error.code
+            });
             throw error;
         }
     },
@@ -164,8 +250,16 @@ export const campaignService = {
 
             if (error) throw error;
             return data;
-        } catch (error) {
-            console.error('Error updating campaign:', error);
+        } catch (error: any) {
+            console.error('Error updating campaign:', {
+                message: error?.message || 'Unknown error',
+                details: error?.details || 'No details available',
+                hint: error?.hint || 'No hint available',
+                code: error?.code || 'No code available',
+                errorType: typeof error,
+                errorConstructor: error?.constructor?.name,
+                fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+            });
             throw error;
         }
     },
@@ -264,8 +358,13 @@ export const campaignService = {
             console.log('✅ Campaign sent successfully!');
 
             return { success: true };
-        } catch (error) {
-            console.error('Error sending campaign:', error);
+        } catch (error: any) {
+            console.error('Error sending campaign:', {
+                message: error.message,
+                details: error.details,
+                hint: error.hint,
+                code: error.code
+            });
 
             // Update campaign status to failed
             await this.updateCampaign(campaignId, { status: 'failed' });

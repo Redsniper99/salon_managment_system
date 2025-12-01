@@ -1,13 +1,14 @@
 import { supabase } from '@/lib/supabase';
-import { Resend } from 'resend';
+
 
 interface NotificationTemplate {
     id: string;
     name: string;
     type: 'appointment_confirmation' | 'appointment_reminder' | 'appointment_cancellation' | 'promotional';
-    channel: 'sms' | 'email' | 'both';
+    channel: 'sms' | 'email' | 'whatsapp' | 'both';
     subject?: string;
     message: string;
+    whatsapp_template_name?: string;
     is_active: boolean;
 }
 
@@ -20,10 +21,7 @@ interface TemplateVariables {
     [key: string]: string | undefined;
 }
 
-// Initialize Resend (Email) - only if API key is present
-const resend = process.env.RESEND_API_KEY
-    ? new Resend(process.env.RESEND_API_KEY)
-    : null;
+// Resend is now handled in the API route /api/send-email
 
 export const notificationsService = {
     /**
@@ -56,10 +54,18 @@ export const notificationsService = {
                 .eq('is_active', true)
                 .single();
 
-            if (error) throw error;
+            if (error) {
+                console.error('Supabase error fetching template:', {
+                    message: error.message,
+                    details: error.details,
+                    hint: error.hint,
+                    code: error.code
+                });
+                throw new Error(`Failed to fetch template: ${error.message}`);
+            }
             return data as NotificationTemplate;
-        } catch (error) {
-            console.error('Error fetching template:', error);
+        } catch (error: any) {
+            console.error('Error fetching template:', error.message || error);
             throw error;
         }
     },
@@ -162,34 +168,36 @@ export const notificationsService = {
     /**
      * Send email using Resend (ACTUALLY SENDS)
      */
+    /**
+     * Send email using the API route (works from client & server)
+     */
     async sendEmail(to: string, subject: string, message: string) {
         try {
-            if (!resend || !process.env.RESEND_API_KEY) {
-                console.warn('⚠️  Resend not configured - email not sent');
-                console.log('📧 Would send email to:', to);
-                console.log('📧 Subject:', subject);
-                console.log('📧 Message:', message);
-                return { success: false, error: 'Email service not configured' };
-            }
-
-            const { data, error } = await resend.emails.send({
-                from: process.env.RESEND_FROM_EMAIL || 'SalonFlow <onboarding@resend.dev>',
-                to: [to],
-                subject: subject,
-                html: `<p>${message.replace(/\n/g, '<br>')}</p>`
+            const response = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    to,
+                    subject,
+                    html: `<p>${message.replace(/\n/g, '<br>')}</p>`
+                }),
             });
 
-            if (error) {
-                console.error('❌ Resend error:', error);
-                throw error;
+            const result = await response.json();
+
+            if (!result.success) {
+                console.error('❌ Email send failed:', result.error);
+                throw new Error(result.error);
             }
 
             console.log('✅ Email sent successfully to:', to);
-            console.log('📧 Subject:', subject);
-            return { success: true, data };
+            return { success: true, data: result.data };
         } catch (error: any) {
             console.error('Error sending email:', error);
-            throw error;
+            // Fallback for logging if fetch fails (e.g. network error)
+            return { success: false, error: error.message || 'Failed to send email' };
         }
     },
 
@@ -231,7 +239,14 @@ export const notificationsService = {
                 .eq('id', customerId)
                 .single();
 
-            if (customerError) throw customerError;
+            if (customerError) {
+                console.error('Supabase error fetching customer:', {
+                    message: customerError.message,
+                    details: customerError.details,
+                    code: customerError.code
+                });
+                throw new Error(`Failed to fetch customer: ${customerError.message}`);
+            }
             if (!customer) throw new Error('Customer not found');
 
             // Get template
@@ -248,7 +263,8 @@ export const notificationsService = {
 
             const results: any = {
                 email: null,
-                sms: null
+                sms: null,
+                whatsapp: null
             };
 
             // Send based on channel
@@ -256,9 +272,45 @@ export const notificationsService = {
                 if (customer.email) {
                     try {
                         results.email = await this.sendEmail(customer.email, subject, message);
-                    } catch (error) {
-                        console.error('Email send failed:', error);
-                        results.email = { success: false, error };
+                    } catch (error: any) {
+                        console.error('Email send failed:', error.message || error);
+                        results.email = { success: false, error: error.message || 'Email send failed' };
+                    }
+                }
+            }
+
+            if (template.channel === 'whatsapp') {
+                if (customer.phone) {
+                    try {
+                        const { whatsappService } = await import('./whatsapp');
+
+                        // If it's a template message (required for business-initiated)
+                        if (template.whatsapp_template_name) {
+                            // Map variables to components based on your template structure
+                            // This is a simplified example - you might need more complex mapping logic
+                            const components = [
+                                {
+                                    type: 'body',
+                                    parameters: Object.values(variables).map(value => ({
+                                        type: 'text',
+                                        text: value || ''
+                                    }))
+                                }
+                            ];
+
+                            results.whatsapp = await whatsappService.sendTemplate(
+                                customer.phone,
+                                template.whatsapp_template_name,
+                                'en_US',
+                                components
+                            );
+                        } else {
+                            // Fallback to text message (only works within 24h window)
+                            results.whatsapp = await whatsappService.sendText(customer.phone, message);
+                        }
+                    } catch (error: any) {
+                        console.error('WhatsApp send failed:', error.message || error);
+                        results.whatsapp = { success: false, error: error.message || 'WhatsApp send failed' };
                     }
                 }
             }
@@ -267,9 +319,9 @@ export const notificationsService = {
                 if (customer.phone) {
                     try {
                         results.sms = await this.sendSMS(customer.phone, message);
-                    } catch (error) {
-                        console.error('SMS send failed:', error);
-                        results.sms = { success: false, error };
+                    } catch (error: any) {
+                        console.error('SMS send failed:', error.message || error);
+                        results.sms = { success: false, error: error.message || 'SMS send failed' };
                     }
                 }
             }
@@ -279,8 +331,8 @@ export const notificationsService = {
                 message: 'Notification sent',
                 results
             };
-        } catch (error) {
-            console.error('Error sending notification:', error);
+        } catch (error: any) {
+            console.error('Error sending notification:', error.message || error);
             throw error;
         }
     }
