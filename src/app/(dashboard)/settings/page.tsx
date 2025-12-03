@@ -944,17 +944,19 @@ export default function SettingsPage() {
                     </button>
                 )}
 
-                {/* Availability Tab - Visible to everyone */}
-                <button
-                    onClick={() => setActiveTab('availability')}
-                    className={`px-4 py-2 font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'availability'
-                        ? 'border-primary-600 text-primary-600 dark:text-primary-400'
-                        : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                        }`}
-                >
-                    <Clock className="h-4 w-4 inline mr-2" />
-                    My Availability
-                </button>
+                {/* Availability Tab - Visible to Stylists only */}
+                {!hasRole(['Owner']) && (
+                    <button
+                        onClick={() => setActiveTab('availability')}
+                        className={`px-4 py-2 font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'availability'
+                            ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                            : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                            }`}
+                    >
+                        <Clock className="h-4 w-4 inline mr-2" />
+                        My Availability
+                    </button>
+                )}
             </div>
 
             {/* Tab Content */}

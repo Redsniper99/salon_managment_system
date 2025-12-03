@@ -202,25 +202,35 @@ export const notificationsService = {
     },
 
     /**
-     * Mock SMS sending (LOGS TO CONSOLE for demo)
+     * Send SMS using Text.lk via API route (works from client & server)
      */
     async sendSMS(to: string, message: string) {
-        // Mock SMS for demo - just log it
-        console.log('📱 ============ SMS NOTIFICATION (DEMO MODE) ============');
-        console.log('📞 To:', to);
-        console.log('💬 Message:', message);
-        console.log('✅ SMS would be sent in production');
-        console.log('=========================================================');
+        try {
+            const response = await fetch('/api/send-sms', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    to,
+                    message
+                }),
+            });
 
-        return {
-            success: true,
-            data: {
-                sid: 'mock-' + Date.now(),
-                to,
-                message,
-                note: 'SMS demo mode - check console for message content'
+            const result = await response.json();
+
+            if (!result.success) {
+                console.error('❌ SMS send failed:', result.error);
+                throw new Error(result.error);
             }
-        };
+
+            console.log('✅ SMS sent successfully to:', to);
+            return { success: true, data: result.data };
+        } catch (error: any) {
+            console.error('Error sending SMS:', error);
+            // Return error instead of throwing to allow notification to continue
+            return { success: false, error: error.message || 'Failed to send SMS' };
+        }
     },
 
     /**

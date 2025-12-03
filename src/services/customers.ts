@@ -138,15 +138,30 @@ export const customersService = {
     },
 
     /**
-     * Delete a customer
+     * Delete a customer (and all related records)
      */
     async deleteCustomer(id: string) {
+        // Delete related campaign sends first (foreign key constraint)
+        const { error: campaignSendsError } = await supabase
+            .from('campaign_sends')
+            .delete()
+            .eq('customer_id', id);
+
+        if (campaignSendsError) {
+            console.error('Error deleting campaign sends:', campaignSendsError);
+            // Continue anyway - customer might not have campaign sends
+        }
+
+        // Now delete the customer
         const { error } = await supabase
             .from('customers')
             .delete()
             .eq('id', id);
 
-        if (error) throw error;
+        if (error) {
+            console.error('Supabase delete error:', error);
+            throw new Error(error.message || 'Failed to delete customer. Please check if customer has related appointments or invoices.');
+        }
         return true;
     }
 };

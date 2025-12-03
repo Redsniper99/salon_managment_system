@@ -26,6 +26,9 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
     const [formData, setFormData] = useState({
         customerName: '',
         customerPhone: '',
+        customerEmail: '',
+        customerGender: 'Female' as 'Male' | 'Female' | 'Other',
+        customerPreferences: '',
         date: '',
         time: '',
         serviceId: '',
@@ -88,9 +91,13 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
             let customer = await customersService.getCustomerByPhone(formData.customerPhone);
 
             if (!customer) {
+                // Create new customer with full details
                 customer = await customersService.createCustomer({
                     name: formData.customerName,
                     phone: formData.customerPhone,
+                    email: formData.customerEmail || undefined,
+                    gender: formData.customerGender,
+                    preferences: formData.customerPreferences || undefined,
                 });
             }
 
@@ -131,6 +138,9 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
             setFormData({
                 customerName: '',
                 customerPhone: '',
+                customerEmail: '',
+                customerGender: 'Female',
+                customerPreferences: '',
                 date: '',
                 time: '',
                 serviceId: '',
@@ -196,9 +206,53 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                             type="tel"
                             value={formData.customerPhone}
                             onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
-                            placeholder="Enter phone number"
+                            placeholder="e.g. +94 77 123 4567"
                             required
                         />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Customer Email */}
+                        <Input
+                            label="Email (Optional)"
+                            type="email"
+                            value={formData.customerEmail}
+                            onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
+                            placeholder="e.g. customer@example.com"
+                        />
+
+                        {/* Customer Gender */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Gender
+                            </label>
+                            <select
+                                value={formData.customerGender}
+                                onChange={(e) => setFormData({ ...formData, customerGender: e.target.value as 'Male' | 'Female' | 'Other' })}
+                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
+                            >
+                                <option value="Female">Female</option>
+                                <option value="Male">Male</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Customer Preferences */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Customer Preferences (Optional)
+                        </label>
+                        <textarea
+                            value={formData.customerPreferences}
+                            onChange={(e) => setFormData({ ...formData, customerPreferences: e.target.value })}
+                            placeholder="Any allergies, preferences, special requirements..."
+                            rows={2}
+                            className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors resize-none text-gray-900 dark:text-white"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                         {/* Date */}
                         <Input

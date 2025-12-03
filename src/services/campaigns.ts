@@ -290,33 +290,57 @@ export const campaignService = {
             const campaign = await this.getCampaignById(campaignId);
             if (!campaign) throw new Error('Campaign not found');
 
+            // Get template details
+            const { data: template, error: templateError } = await supabase
+                .from('notification_templates')
+                .select('*')
+                .eq('id', campaign.template_id)
+                .single();
+
+            if (templateError || !template) {
+                throw new Error('Template not found for this campaign');
+            }
+
             // Update status to sending
             await this.updateCampaign(campaignId, { status: 'sending', sent_at: new Date().toISOString() });
 
             // Get target customers
             const { customers } = await this.previewAudience(campaign.target_segments, campaign.channel);
 
-            console.log(`📤 Sending campaign to ${customers.length} customers...`);
+            console.log(`📤 Sending campaign "${campaign.name}" to ${customers.length} customers...`);
+            console.log(`📋 Using template: ${template.name} (${template.type})`);
+
+            let sent_count = 0;
+            let failed_count = 0;
 
             // Send to each customer
             for (const customer of customers) {
                 try {
                     // Create campaign send record
-                    const { data: sendRecord } = await supabase
+                    const { data: sendRecord, error: insertError } = await supabase
                         .from('campaign_sends')
                         .insert({
                             campaign_id: campaignId,
                             customer_id: customer.id,
                             channel: campaign.channel,
+                            message_content: template.message,
                             status: 'pending'
                         })
                         .select()
                         .single();
 
-                    // Send notification using template
-                    await notificationsService.sendNotification(
+                    if (insertError) {
+                        console.error('Failed to create send record:', insertError);
+                        failed_count++;
+                        continue;
+                    }
+
+                    // Send notification using template type
+                    console.log(`📧 Sending to ${customer.name} (${customer.email || customer.phone})...`);
+
+                    const result = await notificationsService.sendNotification(
                         customer.id,
-                        campaign.notification_templates.type,
+                        template.type, // Use template type here
                         {
                             customer_name: customer.name,
                             date: new Date().toLocaleDateString(),
@@ -333,10 +357,14 @@ export const campaignService = {
                         })
                         .eq('id', sendRecord.id);
 
-                } catch (error) {
-                    console.error(`Failed to send to customer ${customer.id}:`, error);
+                    sent_count++;
+                    console.log(`✅ Sent to ${customer.name}`);
 
-                    // Record failure
+                } catch (error) {
+                    console.error(`❌ Failed to send to customer ${customer.name}:`, error);
+                    failed_count++;
+
+                    // Record failure if sendRecord was created
                     await supabase
                         .from('campaign_sends')
                         .update({
@@ -348,18 +376,19 @@ export const campaignService = {
                 }
             }
 
-            // Update campaign status to completed
+            // Update campaign status and counts
             await this.updateCampaign(campaignId, {
                 status: 'completed',
-                completed_at: new Date().toISOString()
+                completed_at: new Date().toISOString(),
+                sent_count,
+                failed_count
             });
 
-            // Stats are automatically updated by trigger
-            console.log('✅ Campaign sent successfully!');
+            console.log(`✅ Campaign completed! Sent: ${sent_count}, Failed: ${failed_count}`);
 
-            return { success: true };
+            return { success: true, sent_count, failed_count };
         } catch (error: any) {
-            console.error('Error sending campaign:', {
+            console.error('❌ Error sending campaign:', {
                 message: error.message,
                 details: error.details,
                 hint: error.hint,

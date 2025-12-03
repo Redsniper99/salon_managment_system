@@ -114,12 +114,26 @@ export const appointmentsService = {
 
         if (error) throw error;
 
-        // Send email notification to stylist
+        // Send notifications to stylist (both email and SMS)
         if (data && data.stylist) {
             try {
                 const { notificationsService } = await import('./notifications');
                 const stylist = data.stylist as any;
                 const customer = data.customer as any;
+
+                // Get service names for display
+                let serviceNames = 'Services';
+                try {
+                    const { data: services } = await supabase
+                        .from('services')
+                        .select('name')
+                        .in('id', data.services);
+                    if (services && services.length > 0) {
+                        serviceNames = services.map(s => s.name).join(', ');
+                    }
+                } catch (err) {
+                    console.error('Error fetching service names:', err);
+                }
 
                 const appointmentDate = new Date(data.appointment_date).toLocaleDateString('en-US', {
                     weekday: 'long',
@@ -127,7 +141,21 @@ export const appointmentsService = {
                     month: 'long',
                     day: 'numeric'
                 });
+                const shortDate = new Date(data.appointment_date).toLocaleDateString();
 
+                // Send SMS directly to stylist (not using sendNotification since that expects customer ID)
+                if (stylist.phone) {
+                    try {
+                        const smsMessage = `📅 New Appointment! Customer: ${customer.name}, Service: ${serviceNames}, Date: ${shortDate} at ${data.start_time}. Duration: ${data.duration} mins.`;
+
+                        await notificationsService.sendSMS(stylist.phone, smsMessage);
+                        console.log(`✅ SMS notification sent to stylist: ${stylist.phone}`);
+                    } catch (smsError) {
+                        console.error('❌ Failed to send SMS to stylist:', smsError);
+                    }
+                }
+
+                // Send Email with detailed information
                 const emailSubject = `New Appointment Scheduled - ${appointmentDate}`;
                 const emailMessage = `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -156,7 +184,7 @@ export const appointmentsService = {
                                 </tr>
                                 <tr>
                                     <td style="padding: 8px 0;"><strong>Services:</strong></td>
-                                    <td style="padding: 8px 0;">${data.services.join(', ')}</td>
+                                    <td style="padding: 8px 0;">${serviceNames}</td>
                                 </tr>
                                 ${data.notes ? `
                                 <tr>
@@ -180,16 +208,17 @@ export const appointmentsService = {
                     </div>
                 `;
 
-                await notificationsService.sendEmail(
-                    stylist.email,
-                    emailSubject,
-                    emailMessage
-                );
-
-                console.log(`✅ Email notification sent to stylist: ${stylist.email}`);
-            } catch (emailError) {
+                if (stylist.email) {
+                    await notificationsService.sendEmail(
+                        stylist.email,
+                        emailSubject,
+                        emailMessage
+                    );
+                    console.log(`✅ Email notification sent to stylist: ${stylist.email}`);
+                }
+            } catch (notificationError) {
                 // Log error but don't fail the appointment creation
-                console.error('❌ Failed to send email to stylist:', emailError);
+                console.error('❌ Failed to send notifications to stylist:', notificationError);
             }
         }
 
@@ -215,6 +244,9 @@ export const appointmentsService = {
      * Update appointment status
      */
     async updateStatus(id: string, status: AppointmentStatus) {
+        // Get appointment details first (for notifications)
+        const appointment = await this.getAppointmentById(id);
+
         const { data, error } = await supabase
             .from('appointments')
             .update({ status })
@@ -223,6 +255,33 @@ export const appointmentsService = {
             .single();
 
         if (error) throw error;
+
+        // Send cancellation apology if status is Cancelled
+        if (status === 'Cancelled' && appointment) {
+            try {
+                const { notificationsService } = await import('./notifications');
+                const customer = appointment.customer as any;
+
+                if (customer && (customer.email || customer.phone)) {
+                    const appointmentDate = new Date(appointment.appointment_date).toLocaleDateString();
+                    const reason = 'Schedule conflict'; // Could be passed as parameter
+
+                    await notificationsService.sendNotification(
+                        customer.id,
+                        'appointment_cancellation_apology',
+                        {
+                            customer_name: customer.name,
+                            date: appointmentDate,
+                            time: appointment.start_time,
+                            reason: reason
+                        }
+                    );
+                    console.log(`✅ Cancellation apology sent to customer: ${customer.name}`);
+                }
+            } catch (notificationError) {
+                console.error('❌ Failed to send cancellation apology:', notificationError);
+            }
+        }
 
         // Note: Invoice creation and earnings calculation now happens only in POS
         // when cashier creates the bill, not when appointment is marked as "Completed"

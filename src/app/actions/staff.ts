@@ -1,7 +1,7 @@
 'use server';
 
 import { getAdminClient } from '@/lib/supabase';
-import { notificationsService } from '@/services/notifications';
+import { sendEmailFromServer } from '@/lib/email-server';
 
 // Utility to generate random password
 function generatePassword(): string {
@@ -89,21 +89,17 @@ export async function createStaffAction(staffData: {
             throw staffError;
         }
 
-        // 4. Send welcome email
-        // Note: notificationsService might need to be updated if it uses client-side logic, 
-        // but usually sending email is an API call which is fine on server.
-        // However, window.location.origin won't work on server.
-        // We'll use a hardcoded URL or env var, or pass it in.
-        // For now, let's try to get the origin from headers or just use a default.
-
+        // 4. Send welcome email (using server-side helper)
         let emailSent = false;
         try {
-            // In server action, we can't access window. 
-            // We'll assume the site URL is configured in env or default to localhost
             const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
             const loginUrl = `${siteUrl}/login`;
 
-            const emailResult = await notificationsService.sendEmail(
+            console.log('📧 Attempting to send welcome email to:', staffData.email);
+            console.log('🔑 RESEND_API_KEY configured:', !!process.env.RESEND_API_KEY);
+            console.log('📧 From email:', process.env.RESEND_FROM_EMAIL);
+
+            const emailResult = await sendEmailFromServer(
                 staffData.email,
                 'Welcome to the Team - Your Account Details',
                 `
@@ -135,9 +131,17 @@ export async function createStaffAction(staffData: {
                 </div>
                 `
             );
+
+            console.log('📧 Email send result:', emailResult);
             emailSent = emailResult.success;
+
+            if (emailSent) {
+                console.log('✅ Welcome email sent successfully to:', staffData.email);
+            } else {
+                console.error('❌ Welcome email failed:', emailResult.error);
+            }
         } catch (emailError) {
-            console.error('Failed to send welcome email:', emailError);
+            console.error('❌ Failed to send welcome email:', emailError);
             // Don't fail the entire operation if email fails
         }
 
