@@ -332,4 +332,97 @@ export const schedulingService = {
             return { success: false, message };
         }
     },
+
+    /**
+     * Get all available stylists with their time slots for a given service and date
+     * Used for walk-in customers who don't have a specific stylist preference
+     */
+    async getAvailableStylistsWithSlots(
+        serviceId: string,
+        date: string,
+        serviceDuration: number,
+        branchId?: string
+    ): Promise<{ stylist: any; slots: TimeSlot[]; skillDetails: any[] }[]> {
+        try {
+            console.log('🔍 getAvailableStylistsWithSlots called:', { serviceId, date, serviceDuration, branchId });
+
+            // 1. Get stylists who can perform this service
+            let query = supabase
+                .from('staff')
+                .select('*')
+                .eq('role', 'Stylist')
+                .eq('is_active', true)
+                .eq('is_emergency_unavailable', false)
+                .contains('specializations', [serviceId])
+                .order('name');
+
+            if (branchId) {
+                query = query.eq('branch_id', branchId);
+            }
+
+            const { data: stylists, error: staffError } = await query;
+            if (staffError) throw staffError;
+
+            if (!stylists || stylists.length === 0) {
+                console.log('❌ No stylists found with this specialization');
+                return [];
+            }
+
+            console.log(`✅ Found ${stylists.length} stylists with this service skill`);
+
+            // 2. Check for unavailable stylists on this date
+            const { data: unavailable } = await supabase
+                .from('stylist_unavailability')
+                .select('stylist_id')
+                .eq('unavailable_date', date);
+
+            const unavailableIds = new Set((unavailable || []).map(u => u.stylist_id));
+
+            // 3. Get all services for skill details
+            const { data: services } = await supabase
+                .from('services')
+                .select('id, name, category')
+                .eq('is_active', true);
+
+            const serviceMap = new Map(services?.map(s => [s.id, s]) || []);
+
+            // 4. Get available time slots for each stylist
+            const results: { stylist: any; slots: TimeSlot[]; skillDetails: any[] }[] = [];
+
+            for (const stylist of stylists) {
+                // Skip if stylist is unavailable on this date
+                if (unavailableIds.has(stylist.id)) {
+                    console.log(`⏭️ Skipping ${stylist.name} - unavailable on ${date}`);
+                    continue;
+                }
+
+                // Get time slots for this stylist (ALL slots, not just available)
+                const allSlots = await this.getAvailableTimeSlots(stylist.id, date, serviceDuration);
+
+                // Get stylist's skill details
+                const skillDetails = (stylist.specializations || [])
+                    .map((id: string) => serviceMap.get(id))
+                    .filter(Boolean);
+
+                // Only include if there are available slots, but return ALL slots for display
+                const availableSlots = allSlots.filter(s => s.available);
+                if (availableSlots.length > 0) {
+                    results.push({
+                        stylist,
+                        slots: allSlots, // Return ALL slots for proper color coding
+                        skillDetails
+                    });
+                    console.log(`✅ ${stylist.name} has ${availableSlots.length} available slots out of ${allSlots.length} total`);
+                } else {
+                    console.log(`⏭️ ${stylist.name} has no available slots`);
+                }
+            }
+
+            console.log(`📊 Total: ${results.length} stylists with available slots`);
+            return results;
+        } catch (error) {
+            console.error('❌ Error in getAvailableStylistsWithSlots:', error);
+            return [];
+        }
+    },
 };

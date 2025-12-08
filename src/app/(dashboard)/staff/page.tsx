@@ -2,18 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, Edit, Trash2, X, Check, Loader, Copy, AlertCircle } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, X, Check, Loader, Copy, AlertCircle, Sparkles } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
-import { Staff, Branch } from '@/lib/types';
+import { Staff, Branch, Service } from '@/lib/types';
 import { staffService } from '@/services/staff';
 import { branchesService } from '@/services/branches';
+import { servicesService } from '@/services/services';
 import { useAuth } from '@/lib/auth';
 
 export default function StaffPage() {
     const { hasRole } = useAuth();
     const [staffMembers, setStaffMembers] = useState<Staff[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
+    const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [roleFilter, setRoleFilter] = useState('All');
@@ -33,6 +35,7 @@ export default function StaffPage() {
         phone: '',
         role: 'Stylist' as 'Manager' | 'Receptionist' | 'Stylist',
         branch_id: '',
+        specializations: [] as string[],
         working_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as string[],
         working_hours: { start: '09:00', end: '18:00' },
     });
@@ -49,12 +52,14 @@ export default function StaffPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [staffData, branchesData] = await Promise.all([
+            const [staffData, branchesData, servicesData] = await Promise.all([
                 staffService.getStaff(),
-                branchesService.getBranches()
+                branchesService.getBranches(),
+                servicesService.getServices()
             ]);
 
             setBranches(branchesData || []);
+            setServices(servicesData || []);
 
             // Auto-select first branch for form if available
             if (branchesData && branchesData.length > 0) {
@@ -118,6 +123,7 @@ export default function StaffPage() {
             phone: formData.phone,
             role: formData.role,
             branch_id: formData.branch_id || (branches.length > 0 ? branches[0].id : ''),
+            specializations: formData.specializations,
             working_days: formData.working_days,
             working_hours: formData.working_hours,
         });
@@ -143,6 +149,7 @@ export default function StaffPage() {
             name: formData.name,
             phone: formData.phone,
             role: formData.role,
+            specializations: formData.specializations,
             working_days: formData.working_days,
             working_hours: formData.working_hours,
         });
@@ -182,6 +189,7 @@ export default function StaffPage() {
             phone: '',
             role: 'Stylist',
             branch_id: branches.length > 0 ? branches[0].id : '',
+            specializations: [],
             working_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
             working_hours: { start: '09:00', end: '18:00' },
         });
@@ -196,6 +204,7 @@ export default function StaffPage() {
             phone: staff.phone,
             role: staff.role as any,
             branch_id: staff.branchId || '',
+            specializations: staff.specializations || [],
             working_days: staff.workingDays || [],
             working_hours: staff.workingHours || { start: '09:00', end: '18:00' },
         });
@@ -328,6 +337,27 @@ export default function StaffPage() {
                                         {staff.workingDays.join(', ')}
                                     </p>
                                 )}
+                                {staff.specializations && staff.specializations.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {staff.specializations.slice(0, 3).map((specId) => {
+                                            const service = services.find(s => s.id === specId);
+                                            return service ? (
+                                                <span
+                                                    key={specId}
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full"
+                                                >
+                                                    <Sparkles className="w-3 h-3" />
+                                                    {service.name}
+                                                </span>
+                                            ) : null;
+                                        })}
+                                        {staff.specializations.length > 3 && (
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                +{staff.specializations.length - 3} more
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </motion.div>
                     ))
@@ -419,6 +449,43 @@ export default function StaffPage() {
                                         ))}
                                     </select>
                                 </div>
+
+                                {/* Specializations/Skills - Only for Stylists */}
+                                {formData.role === 'Stylist' && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                            Skills / Services
+                                            <span className="text-xs text-gray-500 ml-2">(Select services this stylist can perform)</span>
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-200 dark:border-gray-600">
+                                            {services.map((service) => (
+                                                <label key={service.id} className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.specializations.includes(service.id)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setFormData({ ...formData, specializations: [...formData.specializations, service.id] });
+                                                            } else {
+                                                                setFormData({ ...formData, specializations: formData.specializations.filter(id => id !== service.id) });
+                                                            }
+                                                        }}
+                                                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                                    />
+                                                    <div className="flex-1">
+                                                        <span className="text-sm text-gray-700 dark:text-gray-300">{service.name}</span>
+                                                        <span className="text-xs text-gray-500 ml-2">({service.category})</span>
+                                                    </div>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {formData.specializations.length > 0 && (
+                                            <p className="text-xs text-primary-600 dark:text-primary-400 mt-2">
+                                                {formData.specializations.length} service{formData.specializations.length !== 1 ? 's' : ''} selected
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

@@ -215,4 +215,80 @@ export const staffService = {
     async deleteStaff(id: string): Promise<{ success: boolean; message: string }> {
         return await deleteStaffAction(id);
     },
+
+    /**
+     * Get stylists who can perform a specific service (have it in their specializations)
+     */
+    async getStylistsByService(serviceId: string, branchId?: string, date?: string) {
+        let query = supabase
+            .from('staff')
+            .select('*')
+            .eq('role', 'Stylist')
+            .eq('is_active', true)
+            .contains('specializations', [serviceId])
+            .order('name');
+
+        if (branchId) {
+            query = query.eq('branch_id', branchId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        // If date is provided, filter out unavailable stylists
+        if (date && data) {
+            const { data: unavailable } = await supabase
+                .from('stylist_unavailability')
+                .select('stylist_id')
+                .eq('unavailable_date', date);
+
+            const unavailableIds = new Set((unavailable || []).map(u => u.stylist_id));
+
+            // Also filter out emergency unavailable stylists
+            return data.filter(stylist =>
+                !unavailableIds.has(stylist.id) && !stylist.is_emergency_unavailable
+            );
+        }
+
+        return data;
+    },
+
+    /**
+     * Get all stylists with their specialization details (service names)
+     */
+    async getStylistsWithSkills(branchId?: string) {
+        let query = supabase
+            .from('staff')
+            .select('*')
+            .eq('role', 'Stylist')
+            .eq('is_active', true)
+            .order('name');
+
+        if (branchId) {
+            query = query.eq('branch_id', branchId);
+        }
+
+        const { data: stylists, error: staffError } = await query;
+        if (staffError) throw staffError;
+
+        // Get all services to map UUIDs to names
+        const { data: services, error: servicesError } = await supabase
+            .from('services')
+            .select('id, name, category')
+            .eq('is_active', true);
+
+        if (servicesError) throw servicesError;
+
+        // Create a map for quick lookup
+        const serviceMap = new Map(services?.map(s => [s.id, s]) || []);
+
+        // Enrich stylists with their skill details
+        return (stylists || []).map(stylist => ({
+            ...stylist,
+            skillDetails: (stylist.specializations || [])
+                .map((id: string) => serviceMap.get(id))
+                .filter(Boolean)
+        }));
+    },
 };

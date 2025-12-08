@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Calendar, Clock, User, Scissors, CheckCircle } from 'lucide-react';
+import { X, Calendar, Clock, User, Scissors, CheckCircle, Users, UserCheck } from 'lucide-react';
 import Modal from '@/components/shared/Modal';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
@@ -13,6 +13,7 @@ import { staffService } from '@/services/staff';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import TimeSlotPicker from '@/components/scheduling/TimeSlotPicker';
+import AvailableStylistsView from './AvailableStylistsView';
 
 interface CreateAppointmentModalProps {
     isOpen: boolean;
@@ -38,6 +39,8 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
     const [loading, setLoading] = useState(false);
     const [services, setServices] = useState<any[]>([]);
     const [stylists, setStylists] = useState<any[]>([]);
+    const [hasStylistPreference, setHasStylistPreference] = useState<boolean | null>(null);
+    const [selectedStylistName, setSelectedStylistName] = useState('');
 
     // Fetch services and stylists when modal opens
     useEffect(() => {
@@ -45,6 +48,8 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
             fetchServices();
             fetchStylists();
             setStep('selection'); // Reset step on open
+            setHasStylistPreference(null); // Reset preference on open
+            setSelectedStylistName('');
         }
     }, [isOpen]);
 
@@ -285,29 +290,86 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                             </select>
                         </div>
 
-                        {/* Stylist */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                Stylist
-                            </label>
-                            <select
-                                value={formData.stylistId}
-                                onChange={(e) => setFormData({ ...formData, stylistId: e.target.value })}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
-                                required
-                            >
-                                <option value="">Select stylist</option>
-                                {stylists.map((stylist) => (
-                                    <option key={stylist.id} value={stylist.id}>
-                                        {stylist.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        {/* Stylist Preference Toggle - shown after service is selected */}
+                        {formData.serviceId && (
+                            <div className="col-span-full">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                                    Do you have a specific stylist preference?
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <motion.button
+                                        type="button"
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        onClick={() => {
+                                            setHasStylistPreference(true);
+                                            setFormData({ ...formData, stylistId: '', time: '' });
+                                            setSelectedStylistName('');
+                                        }}
+                                        className={`
+                                            flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all
+                                            ${hasStylistPreference === true
+                                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                                                : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 text-gray-700 dark:text-gray-300'
+                                            }
+                                        `}
+                                    >
+                                        <UserCheck className="w-5 h-5" />
+                                        <span className="font-medium">Yes, I have a preference</span>
+                                    </motion.button>
+                                    <motion.button
+                                        type="button"
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        onClick={() => {
+                                            setHasStylistPreference(false);
+                                            setFormData({ ...formData, stylistId: '', time: '' });
+                                            setSelectedStylistName('');
+                                        }}
+                                        className={`
+                                            flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all
+                                            ${hasStylistPreference === false
+                                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                                                : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 text-gray-700 dark:text-gray-300'
+                                            }
+                                        `}
+                                    >
+                                        <Users className="w-5 h-5" />
+                                        <span className="font-medium">No, show available</span>
+                                    </motion.button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Specific Stylist Selection - shown when user has preference */}
+                        {formData.serviceId && hasStylistPreference === true && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                    Stylist
+                                </label>
+                                <select
+                                    value={formData.stylistId}
+                                    onChange={(e) => {
+                                        const stylist = stylists.find(s => s.id === e.target.value);
+                                        setFormData({ ...formData, stylistId: e.target.value, time: '' });
+                                        setSelectedStylistName(stylist?.name || '');
+                                    }}
+                                    className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
+                                    required={hasStylistPreference === true}
+                                >
+                                    <option value="">Select stylist</option>
+                                    {stylists.map((stylist) => (
+                                        <option key={stylist.id} value={stylist.id}>
+                                            {stylist.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Time Slot Picker - shown after date, stylist, and service selected */}
-                    {formData.date && formData.stylistId && formData.serviceId && (
+                    {/* Time Slot Picker - shown when user has specific stylist preference */}
+                    {formData.date && formData.stylistId && formData.serviceId && hasStylistPreference === true && (
                         <div className="col-span-full">
                             <TimeSlotPicker
                                 stylistId={formData.stylistId}
@@ -317,6 +379,40 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                                 selectedTime={formData.time}
                             />
                             {/* Hidden required input to enforce time selection */}
+                            <input
+                                type="text"
+                                value={formData.time}
+                                required
+                                className="opacity-0 h-0 w-0 absolute"
+                                onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Please select a time slot')}
+                                onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
+                            />
+                        </div>
+                    )}
+
+                    {/* Available Stylists View - shown when user has no preference */}
+                    {formData.date && formData.serviceId && hasStylistPreference === false && (
+                        <div className="col-span-full">
+                            <AvailableStylistsView
+                                serviceId={formData.serviceId}
+                                serviceName={services.find(s => s.id === formData.serviceId)?.name || ''}
+                                serviceDuration={services.find(s => s.id === formData.serviceId)?.duration || 60}
+                                date={formData.date}
+                                onSelect={(stylistId, time, stylistName) => {
+                                    setFormData({ ...formData, stylistId, time });
+                                    setSelectedStylistName(stylistName);
+                                }}
+                                branchId={user?.branchId}
+                            />
+                            {/* Hidden required inputs */}
+                            <input
+                                type="text"
+                                value={formData.stylistId}
+                                required
+                                className="opacity-0 h-0 w-0 absolute"
+                                onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Please select a stylist')}
+                                onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
+                            />
                             <input
                                 type="text"
                                 value={formData.time}
