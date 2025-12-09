@@ -5,29 +5,36 @@ export async function sendWhatsAppMessage(to: string, message: any) {
     const token = process.env.WHATSAPP_ACCESS_TOKEN;
     const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
+    console.log('📤 Sending WhatsApp message to:', to);
+    console.log('🔑 Token present:', !!token, '| PhoneID:', phoneId);
+
     if (!token || !phoneId) {
-        console.error('WhatsApp credentials missing');
+        console.error('❌ WhatsApp credentials missing!');
         return null;
     }
 
     try {
+        const payload = {
+            messaging_product: 'whatsapp',
+            to: to,
+            ...message
+        };
+        console.log('📦 Payload:', JSON.stringify(payload, null, 2));
+
         const response = await fetch(`${WHATSAPP_API_URL}/${phoneId}/messages`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                messaging_product: 'whatsapp',
-                to: to,
-                ...message
-            }),
+            body: JSON.stringify(payload),
         });
 
         const data = await response.json();
+        console.log('📬 WhatsApp API Response:', response.status, JSON.stringify(data));
         return data;
     } catch (error) {
-        console.error('Error sending WhatsApp message:', error);
+        console.error('❌ Error sending WhatsApp message:', error);
         return null;
     }
 }
