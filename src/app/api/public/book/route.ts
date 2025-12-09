@@ -355,6 +355,96 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // ============================================
+        // SEND BOOKING CONFIRMATION NOTIFICATIONS
+        // ============================================
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.salonflow.space';
+        const formattedDate = new Date(appointment.date).toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+
+        // Send SMS confirmation
+        if (customer.phone) {
+            try {
+                const smsMessage = `✅ Booking Confirmed!\n\n📅 ${formattedDate}\n⏰ ${appointment.time}\n💇 ${service.name}\n👤 Stylist: ${stylist.name}\n\nThank you for choosing our salon! Reply CANCEL to cancel.`;
+
+                await fetch(`${baseUrl}/api/send-sms`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to: customer.phone,
+                        message: smsMessage
+                    })
+                });
+            } catch (smsError) {
+                console.error('Failed to send SMS confirmation:', smsError);
+                // Don't fail the booking if SMS fails
+            }
+        }
+
+        // Send Email confirmation
+        if (customer.email) {
+            try {
+                const emailHtml = `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #7c3aed;">✅ Booking Confirmed!</h2>
+                        <p>Hi ${customer.name},</p>
+                        <p>Your appointment has been successfully booked.</p>
+                        
+                        <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                            <h3 style="margin-top: 0; color: #374151;">Appointment Details</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 8px 0;"><strong>📅 Date:</strong></td>
+                                    <td style="padding: 8px 0;">${formattedDate}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0;"><strong>⏰ Time:</strong></td>
+                                    <td style="padding: 8px 0;">${appointment.time}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0;"><strong>💇 Service:</strong></td>
+                                    <td style="padding: 8px 0;">${service.name} (${service.duration} mins)</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0;"><strong>👤 Stylist:</strange></td>
+                                    <td style="padding: 8px 0;">${stylist.name}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0;"><strong>💰 Price:</strong></td>
+                                    <td style="padding: 8px 0;">Rs. ${service.price}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        
+                        <p style="color: #6b7280; font-size: 14px;">
+                            If you need to reschedule or cancel, please contact us in advance.
+                        </p>
+                        
+                        <p style="color: #9ca3af; font-size: 12px; margin-top: 30px;">
+                            Thank you for choosing our salon!
+                        </p>
+                    </div>
+                `;
+
+                await fetch(`${baseUrl}/api/send-email`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to: customer.email,
+                        subject: `✅ Booking Confirmed - ${formattedDate} at ${appointment.time}`,
+                        html: emailHtml
+                    })
+                });
+            } catch (emailError) {
+                console.error('Failed to send email confirmation:', emailError);
+                // Don't fail the booking if email fails
+            }
+        }
+
         return NextResponse.json({
             success: true,
             message: 'Appointment booked successfully',
@@ -374,6 +464,10 @@ export async function POST(request: NextRequest) {
                 customer: {
                     name: customer.name,
                     phone: customer.phone
+                },
+                notifications: {
+                    sms: !!customer.phone,
+                    email: !!customer.email
                 }
             }
         }, { status: 201 });
@@ -385,3 +479,4 @@ export async function POST(request: NextRequest) {
         );
     }
 }
+
