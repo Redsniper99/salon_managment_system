@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { notificationsService } from './notifications';
+import { randomInt } from 'crypto';
 
 export const authService = {
     /**
@@ -24,8 +25,8 @@ export const authService = {
                 throw new Error('OTP not required for your role');
             }
 
-            // Generate 6-digit OTP
-            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            // Generate 6-digit OTP using cryptographically secure randomness
+            const otp = randomInt(100000, 999999).toString();
 
             // Set expiration to 5 minutes from now
             const expiresAt = new Date();

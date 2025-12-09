@@ -116,7 +116,7 @@ export const segmentationService = {
             // Auto categorize (this is now handled by DB function)
             await this.analyzeCustomer(customerId);
 
-            console.log(`✅ Customer categorized successfully`);
+
         } catch (error) {
             console.error('Error categorizing customer:', error);
             throw error;
@@ -135,7 +135,7 @@ export const segmentationService = {
 
             if (error) throw error;
 
-            console.log(`🔄 Categorizing ${customers?.length || 0} customers...`);
+
 
             // Process each customer
             for (const customer of customers || []) {
@@ -145,7 +145,7 @@ export const segmentationService = {
             // Refresh segment counts
             await supabase.rpc('refresh_segment_counts');
 
-            console.log('✅ All customers categorized successfully!');
+
         } catch (error) {
             console.error('Error categorizing all customers:', error);
             throw error;
@@ -154,11 +154,11 @@ export const segmentationService = {
 
     async getSegmentStats(): Promise<any[]> {
         try {
-            console.log('🔍 [SEGMENTATION] Starting getSegmentStats...');
+
 
             // Try to refresh counts first, but don't fail if it doesn't work
             try {
-                console.log('🔍 [SEGMENTATION] Calling refresh_segment_counts RPC...');
+
                 const { data, error } = await supabase.rpc('refresh_segment_counts');
                 if (error) {
                     console.error('❌ [SEGMENTATION] RPC Error Details:', {
@@ -169,28 +169,27 @@ export const segmentationService = {
                     });
                     throw error;
                 }
-                console.log('✅ [SEGMENTATION] Segment counts refreshed successfully');
+
             } catch (refreshError: any) {
                 console.warn('⚠️ [SEGMENTATION] Could not refresh segment counts:', refreshError?.message || refreshError);
                 // Continue anyway - we'll just show the current counts
             }
 
-            console.log('🔍 [SEGMENTATION] Fetching segments from database...');
+
             const { data, error } = await supabase
                 .from('customer_segments')
                 .select('*')
                 .eq('is_active', true)
                 .order('customer_count', { ascending: false });
 
-            console.log('🔍 [SEGMENTATION] Query result:', { data, error });
+
 
             if (error) {
                 console.error('❌ [SEGMENTATION] Database error:', error);
                 throw error;
             }
 
-            console.log('✅ [SEGMENTATION] Successfully fetched', data?.length || 0, 'segments');
-            console.log('📊 [SEGMENTATION] Segment data:', JSON.stringify(data, null, 2));
+
 
             return data || [];
         } catch (error) {

@@ -1,10 +1,18 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createTextLkService } from '@/services/textlk';
+import { getRateLimitKey, checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
 
 const isDevelopment = process.env.NODE_ENV !== 'production' && process.env.SMS_MODE !== 'production';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
     try {
+        // Rate limiting (5 SMS per minute per IP)
+        const rateLimitKey = getRateLimitKey(request);
+        const { allowed, resetIn } = checkRateLimit(rateLimitKey, 5);
+        if (!allowed) {
+            return rateLimitResponse(resetIn);
+        }
+
         const body = await request.json();
         const { to, message } = body;
 

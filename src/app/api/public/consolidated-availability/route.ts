@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getAdminClient } from '@/lib/supabase';
 
 // Use Service Role Key to bypass RLS and read appointments
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getAdminClient();
 
 interface TimeSlot {
     time: string;
     available: boolean;
-    reason?: string;
+    availableStylistCount: number;
 }
 
 /**
- * GET /api/public/available-stylists
+ * GET /api/public/consolidated-availability
  * 
- * Returns all available stylists for a service with their time slots.
- * This is an all-in-one endpoint for the "no preference" booking flow.
+ * Returns a single merged availability grid for "No Preference" bookings.
+ * A slot is available if AT LEAST ONE qualified stylist is free.
  * 
  * Query params:
  * - service_id: (required) The service to book
@@ -125,8 +123,8 @@ export async function GET(request: NextRequest) {
             .select('*')
             .in('stylist_id', stylistIds);
 
-        // Get all appointments for these stylists on this date
-        const { data: allAppointments } = await supabase
+        // Get all appointments for these stylists on this date (bypasses RLS with service role key)
+        const { data: allAppointments, error: appointmentError } = await supabase
             .from('appointments')
             .select('stylist_id, start_time')
             .in('stylist_id', stylistIds)
@@ -135,56 +133,73 @@ export async function GET(request: NextRequest) {
             .neq('status', 'NoShow')
             .neq('status', 'Completed');
 
-        // Get all service names for skill display
-        const { data: allServices } = await supabase
-            .from('services')
-            .select('id, name, category')
-            .eq('is_active', true);
+        // Find the earliest start and latest end across all stylists
+        let globalStartTime = 24 * 60; // Start with end of day
+        let globalEndTime = 0; // Start with beginning of day
 
-        const serviceMap = new Map(allServices?.map(s => [s.id, s]) || []);
-
-        // Process each stylist
-        const results: any[] = [];
-
-        for (const stylist of stylists) {
+        const availableStylists = stylists.filter(stylist => {
             // Skip unavailable stylists
-            if (unavailableIds.has(stylist.id)) continue;
-
+            if (unavailableIds.has(stylist.id)) return false;
             // Skip if not working on this day
-            if (stylist.working_days && !stylist.working_days.includes(dayOfWeek)) continue;
+            if (stylist.working_days && !stylist.working_days.includes(dayOfWeek)) return false;
+            return true;
+        });
 
-            // Get breaks for this stylist
-            const breaks = allBreaks?.filter(b => b.stylist_id === stylist.id) || [];
+        if (availableStylists.length === 0) {
+            return NextResponse.json({
+                success: true,
+                data: [],
+                service: service,
+                message: 'No stylists available on this day'
+            });
+        }
 
-            // Get appointments for this stylist
-            const appointments = allAppointments?.filter(a => a.stylist_id === stylist.id) || [];
-
-            // Generate time slots
+        // Calculate global time range
+        for (const stylist of availableStylists) {
             const workingHours = stylist.working_hours || { start: '09:00', end: '18:00' };
-            const slots: TimeSlot[] = [];
-
             const [startHour, startMinute] = workingHours.start.split(':').map(Number);
             const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-
             const startTime = startHour * 60 + startMinute;
             const endTime = endHour * 60 + endMinute;
 
-            // For today, skip past slots
-            let currentTime = startTime;
-            if (date === new Date().toISOString().split('T')[0]) {
-                const now = new Date();
-                const currentMinutes = now.getHours() * 60 + now.getMinutes() + 30;
-                currentTime = Math.max(startTime, Math.ceil(currentMinutes / slotInterval) * slotInterval);
-            }
+            globalStartTime = Math.min(globalStartTime, startTime);
+            globalEndTime = Math.max(globalEndTime, endTime);
+        }
 
-            while (currentTime + serviceDuration <= endTime) {
-                const hours = Math.floor(currentTime / 60);
-                const minutes = currentTime % 60;
-                const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        // For today, skip past slots
+        let currentTime = globalStartTime;
+        if (date === new Date().toISOString().split('T')[0]) {
+            const now = new Date();
+            const currentMinutes = now.getHours() * 60 + now.getMinutes() + 30; // 30 min buffer
+            currentTime = Math.max(globalStartTime, Math.ceil(currentMinutes / slotInterval) * slotInterval);
+        }
 
-                const slotEnd = currentTime + serviceDuration;
+        // Generate merged time slots
+        const consolidatedSlots: TimeSlot[] = [];
 
-                // Check breaks
+        while (currentTime + serviceDuration <= globalEndTime) {
+            const hours = Math.floor(currentTime / 60);
+            const minutes = currentTime % 60;
+            const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            const slotEnd = currentTime + serviceDuration;
+
+            // Count how many stylists are available at this time
+            let availableCount = 0;
+
+            for (const stylist of availableStylists) {
+                const workingHours = stylist.working_hours || { start: '09:00', end: '18:00' };
+                const [startHour, startMinute] = workingHours.start.split(':').map(Number);
+                const [endHour, endMinute] = workingHours.end.split(':').map(Number);
+                const stylistStart = startHour * 60 + startMinute;
+                const stylistEnd = endHour * 60 + endMinute;
+
+                // Check if slot is within stylist's working hours
+                if (currentTime < stylistStart || slotEnd > stylistEnd) {
+                    continue; // Stylist not working at this time
+                }
+
+                // Check breaks for this stylist
+                const breaks = allBreaks?.filter(b => b.stylist_id === stylist.id) || [];
                 let isBreak = false;
                 for (const brk of breaks) {
                     const [bStartH, bStartM] = brk.start_time.split(':').map(Number);
@@ -197,61 +212,46 @@ export async function GET(request: NextRequest) {
                         break;
                     }
                 }
+                if (isBreak) continue;
 
-                // Check appointments
+                // Check appointments for this stylist
+                const appointments = allAppointments?.filter(a => a.stylist_id === stylist.id) || [];
                 let isBooked = false;
-                if (!isBreak) {
-                    for (const apt of appointments) {
-                        const [aptH, aptM] = apt.start_time.split(':').map(Number);
-                        const aptStart = aptH * 60 + aptM;
-                        const aptDuration = 60; // Default duration since we removed join
-                        const aptEnd = aptStart + aptDuration;
+                for (const apt of appointments) {
+                    const [aptH, aptM] = apt.start_time.split(':').map(Number);
+                    const aptStart = aptH * 60 + aptM;
+                    const aptDuration = 60; // Default duration since join removed
+                    const aptEnd = aptStart + aptDuration;
 
-                        if (currentTime < aptEnd && slotEnd > aptStart) {
-                            isBooked = true;
-                            break;
-                        }
+                    if (currentTime < aptEnd && slotEnd > aptStart) {
+                        isBooked = true;
+                        break;
                     }
                 }
+                if (isBooked) continue;
 
-                slots.push({
-                    time: timeString,
-                    available: !isBreak && !isBooked,
-                    reason: isBreak ? 'Break time' : isBooked ? 'Already booked' : undefined
-                });
-
-                currentTime += slotInterval;
+                // Stylist is available!
+                availableCount++;
             }
 
-            // Only include stylists with at least one available slot
-            const availableSlots = slots.filter(s => s.available).length;
-            if (availableSlots > 0) {
-                results.push({
-                    stylist: {
-                        id: stylist.id,
-                        name: stylist.name,
-                        workingHours: workingHours
-                    },
-                    skills: (stylist.specializations || [])
-                        .map((id: string) => serviceMap.get(id))
-                        .filter(Boolean)
-                        .map((s: any) => ({ id: s.id, name: s.name, category: s.category })),
-                    slots: slots,
-                    availableCount: availableSlots
-                });
-            }
+            consolidatedSlots.push({
+                time: timeString,
+                available: availableCount > 0,
+                availableStylistCount: availableCount
+            });
+
+            currentTime += slotInterval;
         }
-
-        // Sort by most available slots first
-        results.sort((a, b) => b.availableCount - a.availableCount);
 
         return NextResponse.json({
             success: true,
             service: service,
             date: date,
             dayOfWeek: dayOfWeek,
-            data: results,
-            totalStylists: results.length
+            data: consolidatedSlots,
+            totalSlots: consolidatedSlots.length,
+            availableSlots: consolidatedSlots.filter(s => s.available).length,
+            qualifiedStylistCount: availableStylists.length
         });
     } catch (error) {
         console.error('Unexpected error:', error);

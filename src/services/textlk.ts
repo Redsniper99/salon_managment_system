@@ -68,11 +68,7 @@ export class TextLkService {
                 body: JSON.stringify(payload),
             });
 
-            // Log response details for debugging
-            console.log('📡 Text.lk API Response Status:', response.status);
-
             const result: TextLkSendResponse = await response.json();
-            console.log('📡 Text.lk API Response:', JSON.stringify(result, null, 2));
 
             if (result.status === 'error') {
                 throw new Error(result.message || 'SMS send failed');

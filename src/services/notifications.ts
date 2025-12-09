@@ -192,7 +192,7 @@ export const notificationsService = {
                 throw new Error(result.error);
             }
 
-            console.log('✅ Email sent successfully to:', to);
+
             return { success: true, data: result.data };
         } catch (error: any) {
             console.error('Error sending email:', error);
@@ -224,7 +224,7 @@ export const notificationsService = {
                 throw new Error(result.error);
             }
 
-            console.log('✅ SMS sent successfully to:', to);
+
             return { success: true, data: result.data };
         } catch (error: any) {
             console.error('Error sending SMS:', error);

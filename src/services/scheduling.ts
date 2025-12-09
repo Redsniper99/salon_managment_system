@@ -79,12 +79,12 @@ export const schedulingService = {
         serviceDuration: number
     ): Promise<TimeSlot[]> {
         try {
-            console.log('🔍 getAvailableTimeSlots called with:', { stylistId, date, serviceDuration });
+
 
             // 1. Get salon settings
             const settings = await this.getSalonSettings();
             if (!settings) return [];
-            console.log('⚙️ Salon settings:', settings);
+
 
             // 2. Get stylist working hours and emergency status
             const { data: stylist } = await supabase
@@ -94,12 +94,12 @@ export const schedulingService = {
                 .single();
 
             if (!stylist) return [];
-            console.log('👤 Stylist info:', stylist);
+
 
             // Check for emergency unavailability
             const today = new Date().toISOString().split('T')[0];
             if (stylist.is_emergency_unavailable && date >= today) {
-                console.log('🚨 Stylist is in emergency unavailable mode');
+
                 return [];
             }
 
@@ -108,7 +108,7 @@ export const schedulingService = {
             const dateObj = new Date(year, month - 1, day); // Local midnight
             const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
             if (stylist.working_days && !stylist.working_days.includes(dayName)) {
-                console.log('❌ Stylist not working on', dayName);
+
                 return [];
             }
 
@@ -116,7 +116,7 @@ export const schedulingService = {
                 start: settings.default_start_time,
                 end: settings.default_end_time
             };
-            console.log('⏰ Working hours:', workingHours);
+
 
             // 3. Get stylist breaks for this day
             const dayOfWeek = dateObj.getDay();
@@ -126,7 +126,7 @@ export const schedulingService = {
                 .eq('stylist_id', stylistId)
                 .or(`day_of_week.eq.${dayOfWeek},day_of_week.is.null`)
                 .eq('is_recurring', true);
-            console.log('☕ Breaks:', breaks);
+
 
             // 4. Get stylist availability (leaves/holidays)
             const dayStart = `${date}T00:00:00`;
@@ -138,7 +138,7 @@ export const schedulingService = {
                 .eq('stylist_id', stylistId)
                 .or(`start_time.lte.${dayEnd},end_time.gte.${dayStart}`);
 
-            console.log('🏖️ Availability/Leaves:', availability);
+
 
             // 5. Get existing appointments
             const { data: appointments, error: aptError } = await supabase
@@ -147,7 +147,7 @@ export const schedulingService = {
                     p_date: date
                 });
 
-            console.log('📅 Appointments RPC result:', { appointments, error: aptError });
+
 
             // 6. Generate time slots
             const slots: TimeSlot[] = [];
@@ -337,6 +337,10 @@ export const schedulingService = {
      * Get all available stylists with their time slots for a given service and date
      * Used for walk-in customers who don't have a specific stylist preference
      */
+    /**
+     * Get all available stylists with their time slots for a given service and date
+     * Used for walk-in customers who don't have a specific stylist preference
+     */
     async getAvailableStylistsWithSlots(
         serviceId: string,
         date: string,
@@ -344,84 +348,109 @@ export const schedulingService = {
         branchId?: string
     ): Promise<{ stylist: any; slots: TimeSlot[]; skillDetails: any[] }[]> {
         try {
-            console.log('🔍 getAvailableStylistsWithSlots called:', { serviceId, date, serviceDuration, branchId });
+            console.log('🔍 getAvailableStylistsWithSlots called (via API):', { serviceId, date, serviceDuration, branchId });
 
-            // 1. Get stylists who can perform this service
-            let query = supabase
-                .from('staff')
-                .select('*')
-                .eq('role', 'Stylist')
-                .eq('is_active', true)
-                .eq('is_emergency_unavailable', false)
-                .contains('specializations', [serviceId])
-                .order('name');
+            const params = new URLSearchParams({
+                service_id: serviceId,
+                date: date,
+                duration: serviceDuration.toString()
+            });
 
             if (branchId) {
-                query = query.eq('branch_id', branchId);
+                params.append('branch_id', branchId);
             }
 
-            const { data: stylists, error: staffError } = await query;
-            if (staffError) throw staffError;
-
-            if (!stylists || stylists.length === 0) {
-                console.log('❌ No stylists found with this specialization');
+            const response = await fetch(`/api/public/available-stylists?${params.toString()}`);
+            if (!response.ok) {
+                console.error('API Error:', response.status, response.statusText);
                 return [];
             }
 
-            console.log(`✅ Found ${stylists.length} stylists with this service skill`);
+            const result = await response.json();
 
-            // 2. Check for unavailable stylists on this date
-            const { data: unavailable } = await supabase
-                .from('stylist_unavailability')
-                .select('stylist_id')
-                .eq('unavailable_date', date);
+            if (!result.success) {
+                console.error('API returned failure:', result.error);
+                return [];
+            }
 
-            const unavailableIds = new Set((unavailable || []).map(u => u.stylist_id));
+            // Transform API response to match component expectations
+            /* 
+               The component expects: 
+               { 
+                   stylist: { id, name, ... }, 
+                   slots: TimeSlot[], 
+                   skillDetails: { id, name, category }[] 
+               }
+               
+               The API returns:
+               {
+                   stylist: { id, name, ... },
+                   slots: TimeSlot[]
+               }
+               
+               We need to fetch skillDetails separately or just stub them for now if the API doesn't return them.
+               Looking at previous code, skillDetails are just services the stylist can perform.
+               The API `available-stylists` includes `specializations` in the stylist object.
+               We can re-fetch services to map names or just rely on the API.
+               
+               Let's assume the API returns enough info or we can fetch services metadata once.
+            */
 
-            // 3. Get all services for skill details
+            // To ensure skillDetails are populated (used for display badges), we might need to fetch service names locally
+            // or update the API to return them. For now, let's try to map what we have.
+
+            // Fetch all services map for badges (cached/lightweight)
             const { data: services } = await supabase
                 .from('services')
-                .select('id, name, category')
-                .eq('is_active', true);
+                .select('id, name, category');
 
             const serviceMap = new Map(services?.map(s => [s.id, s]) || []);
 
-            // 4. Get available time slots for each stylist
-            const results: { stylist: any; slots: TimeSlot[]; skillDetails: any[] }[] = [];
-
-            for (const stylist of stylists) {
-                // Skip if stylist is unavailable on this date
-                if (unavailableIds.has(stylist.id)) {
-                    console.log(`⏭️ Skipping ${stylist.name} - unavailable on ${date}`);
-                    continue;
-                }
-
-                // Get time slots for this stylist (ALL slots, not just available)
-                const allSlots = await this.getAvailableTimeSlots(stylist.id, date, serviceDuration);
-
-                // Get stylist's skill details
-                const skillDetails = (stylist.specializations || [])
+            return result.data.map((item: any) => {
+                const skillDetails = (item.stylist.specializations || [])
                     .map((id: string) => serviceMap.get(id))
                     .filter(Boolean);
 
-                // Only include if there are available slots, but return ALL slots for display
-                const availableSlots = allSlots.filter(s => s.available);
-                if (availableSlots.length > 0) {
-                    results.push({
-                        stylist,
-                        slots: allSlots, // Return ALL slots for proper color coding
-                        skillDetails
-                    });
-                    console.log(`✅ ${stylist.name} has ${availableSlots.length} available slots out of ${allSlots.length} total`);
-                } else {
-                    console.log(`⏭️ ${stylist.name} has no available slots`);
-                }
-            }
+                return {
+                    stylist: item.stylist,
+                    slots: item.slots,
+                    skillDetails: skillDetails
+                };
+            });
 
-            console.log(`📊 Total: ${results.length} stylists with available slots`);
-            return results;
         } catch (error) {
             console.error('❌ Error in getAvailableStylistsWithSlots:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Get consolidated availability for "No Preference" bookings
+     */
+    async getConsolidatedAvailability(
+        serviceId: string,
+        date: string,
+        branchId?: string
+    ): Promise<TimeSlot[]> {
+        try {
+            const params = new URLSearchParams({
+                service_id: serviceId,
+                date: date
+            });
+
+            if (branchId && branchId !== 'undefined') {
+                params.append('branch_id', branchId);
+            }
+
+            const response = await fetch(`/api/public/consolidated-availability?${params.toString()}`);
+            if (!response.ok) return [];
+
+            const result = await response.json();
+            if (!result.success) return [];
+
+            return result.data;
+        } catch (error) {
+            console.error('Error fetching consolidated availability:', error);
             return [];
         }
     },

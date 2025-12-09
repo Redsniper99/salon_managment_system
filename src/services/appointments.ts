@@ -149,7 +149,7 @@ export const appointmentsService = {
                         const smsMessage = `📅 New Appointment! Customer: ${customer.name}, Service: ${serviceNames}, Date: ${shortDate} at ${data.start_time}. Duration: ${data.duration} mins.`;
 
                         await notificationsService.sendSMS(stylist.phone, smsMessage);
-                        console.log(`✅ SMS notification sent to stylist: ${stylist.phone}`);
+
                     } catch (smsError) {
                         console.error('❌ Failed to send SMS to stylist:', smsError);
                     }
@@ -214,7 +214,7 @@ export const appointmentsService = {
                         emailSubject,
                         emailMessage
                     );
-                    console.log(`✅ Email notification sent to stylist: ${stylist.email}`);
+
                 }
             } catch (notificationError) {
                 // Log error but don't fail the appointment creation
@@ -276,7 +276,7 @@ export const appointmentsService = {
                             reason: reason
                         }
                     );
-                    console.log(`✅ Cancellation apology sent to customer: ${customer.name}`);
+
                 }
             } catch (notificationError) {
                 console.error('❌ Failed to send cancellation apology:', notificationError);
@@ -285,7 +285,7 @@ export const appointmentsService = {
 
         // Note: Invoice creation and earnings calculation now happens only in POS
         // when cashier creates the bill, not when appointment is marked as "Completed"
-        console.log('Appointment status updated to:', status);
+
 
         return data;
     },

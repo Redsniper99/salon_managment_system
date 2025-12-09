@@ -1,14 +1,16 @@
 import { supabase } from '@/lib/supabase';
 import { createStaffAction, deleteStaffAction } from '@/app/actions/staff';
 import { notificationsService } from './notifications';
+import { randomBytes } from 'crypto';
 
-// Utility to generate random password
+// Utility to generate cryptographically secure random password
 function generatePassword(): string {
-    const length = 12;
+    const length = 16;
     const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    const bytes = randomBytes(length);
     let password = '';
     for (let i = 0; i < length; i++) {
-        password += charset.charAt(Math.floor(Math.random() * charset.length));
+        password += charset[bytes[i] % charset.length];
     }
     return password;
 }

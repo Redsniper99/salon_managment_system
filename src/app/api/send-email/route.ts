@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { getRateLimitKey, checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
 
 const resend = process.env.RESEND_API_KEY
     ? new Resend(process.env.RESEND_API_KEY)
@@ -7,8 +8,15 @@ const resend = process.env.RESEND_API_KEY
 
 const isDevelopment = process.env.NODE_ENV !== 'production' && process.env.EMAIL_MODE !== 'production';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
     try {
+        // Rate limiting (10 emails per minute per IP)
+        const rateLimitKey = getRateLimitKey(request);
+        const { allowed, resetIn } = checkRateLimit(rateLimitKey, 10);
+        if (!allowed) {
+            return rateLimitResponse(resetIn);
+        }
+
         const body = await request.json();
         const { to, subject, html } = body;
 

@@ -42,11 +42,11 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
     const [hasStylistPreference, setHasStylistPreference] = useState<boolean | null>(null);
     const [selectedStylistName, setSelectedStylistName] = useState('');
 
-    // Fetch services and stylists when modal opens
+    // Fetch services when modal opens and reset state
     useEffect(() => {
         if (isOpen) {
             fetchServices();
-            fetchStylists();
+            setStylists([]); // Clear stylists until service is selected
             setStep('selection'); // Reset step on open
             setHasStylistPreference(null); // Reset preference on open
             setSelectedStylistName('');
@@ -62,22 +62,28 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
         }
     };
 
-    const fetchStylists = async () => {
+    const fetchStylists = async (serviceId?: string) => {
         try {
-            // Pass date to filter unavailable stylists
-            const data = await staffService.getStylists(undefined, formData.date || undefined);
+            let data;
+            if (serviceId) {
+                // Filter stylists by service capability
+                data = await staffService.getStylistsByService(serviceId, undefined, formData.date || undefined);
+            } else {
+                // Get all stylists (fallback)
+                data = await staffService.getStylists(undefined, formData.date || undefined);
+            }
             setStylists(data || []);
         } catch (error) {
             console.error('Error fetching stylists:', error);
         }
     };
 
-    // Refresh stylists when date changes
+    // Refresh stylists when date or service changes (only when user has stylist preference)
     useEffect(() => {
-        if (formData.date) {
-            fetchStylists();
+        if (formData.date && formData.serviceId && hasStylistPreference === true) {
+            fetchStylists(formData.serviceId);
         }
-    }, [formData.date]);
+    }, [formData.date, formData.serviceId, hasStylistPreference]);
 
     const handleReview = (e: React.FormEvent) => {
         e.preventDefault();

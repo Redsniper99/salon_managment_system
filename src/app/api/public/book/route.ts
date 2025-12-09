@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getRateLimitKey, checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
 
+// Use Service Role Key to bypass RLS for booking operations
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 /**
@@ -30,6 +32,13 @@ const supabase = createClient(
  */
 export async function POST(request: NextRequest) {
     try {
+        // Rate limiting (20 bookings per minute per IP)
+        const rateLimitKey = getRateLimitKey(request);
+        const { allowed, resetIn } = checkRateLimit(rateLimitKey, 20);
+        if (!allowed) {
+            return rateLimitResponse(resetIn);
+        }
+
         const body = await request.json();
         const { customer, appointment } = body;
 
@@ -75,53 +84,204 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Verify stylist exists and can perform this service
-        const { data: stylist, error: stylistError } = await supabase
-            .from('staff')
-            .select('id, name, branch_id, specializations')
-            .eq('id', appointment.stylist_id)
-            .eq('is_active', true)
-            .single();
+        // Track if this is a NO_PREFERENCE booking
+        const isNoPreference = appointment.stylist_id === 'NO_PREFERENCE';
+        let selectedStylistId = appointment.stylist_id;
+        let stylist: any = null;
 
-        if (stylistError || !stylist) {
-            return NextResponse.json(
-                { success: false, error: 'Stylist not found' },
-                { status: 404 }
-            );
-        }
+        if (isNoPreference) {
+            // ============================================
+            // NO_PREFERENCE DISPATCHER LOGIC
+            // Find all qualified stylists available at the requested time
+            // and select the one with the fewest appointments (load balancing)
+            // ============================================
 
-        // Check if stylist can perform this service
-        if (!stylist.specializations?.includes(appointment.service_id)) {
-            return NextResponse.json(
-                { success: false, error: 'This stylist does not offer the selected service' },
-                { status: 400 }
-            );
-        }
+            const dayOfWeek = new Date(appointment.date).toLocaleDateString('en-US', { weekday: 'long' });
 
-        // Check for existing appointment at this time
-        const { data: existingAppointments } = await supabase
-            .from('appointments')
-            .select('id, time, services(duration)')
-            .eq('stylist_id', appointment.stylist_id)
-            .eq('date', appointment.date)
-            .neq('status', 'Cancelled');
+            // Get all stylists who can perform this service
+            const { data: qualifiedStylists, error: qualifiedError } = await supabase
+                .from('staff')
+                .select('id, name, branch_id, specializations, working_days, working_hours, is_emergency_unavailable')
+                .eq('role', 'Stylist')
+                .eq('is_active', true)
+                .eq('is_emergency_unavailable', false)
+                .contains('specializations', [appointment.service_id]);
 
-        // Check for time conflicts
-        const [newHour, newMinute] = appointment.time.split(':').map(Number);
-        const newStart = newHour * 60 + newMinute;
-        const newEnd = newStart + service.duration;
-
-        for (const existing of existingAppointments || []) {
-            const [existH, existM] = existing.time.split(':').map(Number);
-            const existStart = existH * 60 + existM;
-            const existDuration = (existing.services as any)?.duration || 60;
-            const existEnd = existStart + existDuration;
-
-            if (newStart < existEnd && newEnd > existStart) {
+            if (qualifiedError || !qualifiedStylists || qualifiedStylists.length === 0) {
                 return NextResponse.json(
-                    { success: false, error: 'This time slot is no longer available' },
+                    { success: false, error: 'No stylists available for this service' },
+                    { status: 404 }
+                );
+            }
+
+            // Filter stylists working on this day
+            const stylistsWorkingToday = qualifiedStylists.filter(s =>
+                !s.working_days || s.working_days.includes(dayOfWeek)
+            );
+
+            if (stylistsWorkingToday.length === 0) {
+                return NextResponse.json(
+                    { success: false, error: 'No stylists available on this day' },
+                    { status: 404 }
+                );
+            }
+
+            // Check for unavailability (leave/holiday)
+            const stylistIds = stylistsWorkingToday.map(s => s.id);
+            const { data: unavailability } = await supabase
+                .from('stylist_unavailability')
+                .select('stylist_id')
+                .in('stylist_id', stylistIds)
+                .lte('start_date', appointment.date)
+                .gte('end_date', appointment.date);
+
+            const unavailableIds = new Set(unavailability?.map(u => u.stylist_id) || []);
+            const availableStylists = stylistsWorkingToday.filter(s => !unavailableIds.has(s.id));
+
+            if (availableStylists.length === 0) {
+                return NextResponse.json(
+                    { success: false, error: 'All stylists are unavailable on this date' },
+                    { status: 404 }
+                );
+            }
+
+            // Get all breaks for available stylists
+            const availableStylistIds = availableStylists.map(s => s.id);
+            const { data: allBreaks } = await supabase
+                .from('stylist_breaks')
+                .select('*')
+                .in('stylist_id', availableStylistIds);
+
+            // Get all appointments for these stylists on this date
+            const { data: allAppointments } = await supabase
+                .from('appointments')
+                .select('stylist_id, start_time, services(duration)')
+                .in('stylist_id', availableStylistIds)
+                .eq('appointment_date', appointment.date)
+                .neq('status', 'Cancelled');
+
+            // Calculate requested slot timing
+            const [reqHour, reqMinute] = appointment.time.split(':').map(Number);
+            const reqStart = reqHour * 60 + reqMinute;
+            const reqEnd = reqStart + service.duration;
+
+            // Find stylists who are free at the requested time
+            const freeStylists: { stylist: any; appointmentCount: number }[] = [];
+
+            for (const s of availableStylists) {
+                const workingHours = s.working_hours || { start: '09:00', end: '18:00' };
+                const [startH, startM] = workingHours.start.split(':').map(Number);
+                const [endH, endM] = workingHours.end.split(':').map(Number);
+                const stylistStart = startH * 60 + startM;
+                const stylistEnd = endH * 60 + endM;
+
+                // Check if slot is within working hours
+                if (reqStart < stylistStart || reqEnd > stylistEnd) continue;
+
+                // Check breaks
+                const breaks = allBreaks?.filter(b => b.stylist_id === s.id) || [];
+                let isBreak = false;
+                for (const brk of breaks) {
+                    const [bStartH, bStartM] = brk.start_time.split(':').map(Number);
+                    const [bEndH, bEndM] = brk.end_time.split(':').map(Number);
+                    const breakStart = bStartH * 60 + bStartM;
+                    const breakEnd = bEndH * 60 + bEndM;
+                    if (reqStart < breakEnd && reqEnd > breakStart) {
+                        isBreak = true;
+                        break;
+                    }
+                }
+                if (isBreak) continue;
+
+                // Check appointments
+                const appointments = allAppointments?.filter(a => a.stylist_id === s.id) || [];
+                let isBooked = false;
+                for (const apt of appointments) {
+                    const [aptH, aptM] = apt.start_time.split(':').map(Number);
+                    const aptStart = aptH * 60 + aptM;
+                    const aptDuration = (apt.services as any)?.duration || 60;
+                    const aptEnd = aptStart + aptDuration;
+                    if (reqStart < aptEnd && reqEnd > aptStart) {
+                        isBooked = true;
+                        break;
+                    }
+                }
+                if (isBooked) continue;
+
+                // Stylist is available! Count their appointments for load balancing
+                freeStylists.push({
+                    stylist: s,
+                    appointmentCount: appointments.length
+                });
+            }
+
+            if (freeStylists.length === 0) {
+                return NextResponse.json(
+                    { success: false, error: 'No stylists available at this time' },
                     { status: 409 }
                 );
+            }
+
+            // LOAD BALANCING: Select the stylist with the fewest appointments today
+            freeStylists.sort((a, b) => a.appointmentCount - b.appointmentCount);
+            stylist = freeStylists[0].stylist;
+            selectedStylistId = stylist.id;
+
+        } else {
+            // ============================================
+            // STANDARD FLOW: Verify specific stylist
+            // ============================================
+            const { data: fetchedStylist, error: stylistError } = await supabase
+                .from('staff')
+                .select('id, name, branch_id, specializations')
+                .eq('id', appointment.stylist_id)
+                .eq('is_active', true)
+                .single();
+
+            if (stylistError || !fetchedStylist) {
+                return NextResponse.json(
+                    { success: false, error: 'Stylist not found' },
+                    { status: 404 }
+                );
+            }
+
+            // Check if stylist can perform this service
+            if (!fetchedStylist.specializations?.includes(appointment.service_id)) {
+                return NextResponse.json(
+                    { success: false, error: 'This stylist does not offer the selected service' },
+                    { status: 400 }
+                );
+            }
+
+            stylist = fetchedStylist;
+        }
+
+        // Check for existing appointment at this time (skip for NO_PREFERENCE as we already checked)
+        if (!isNoPreference) {
+            const { data: existingAppointments } = await supabase
+                .from('appointments')
+                .select('id, start_time, services(duration)')
+                .eq('stylist_id', selectedStylistId)
+                .eq('appointment_date', appointment.date)
+                .neq('status', 'Cancelled');
+
+            // Check for time conflicts
+            const [newHour, newMinute] = appointment.time.split(':').map(Number);
+            const newStart = newHour * 60 + newMinute;
+            const newEnd = newStart + service.duration;
+
+            for (const existing of existingAppointments || []) {
+                const [existH, existM] = existing.start_time.split(':').map(Number);
+                const existStart = existH * 60 + existM;
+                const existDuration = (existing.services as any)?.duration || 60;
+                const existEnd = existStart + existDuration;
+
+                if (newStart < existEnd && newEnd > existStart) {
+                    return NextResponse.json(
+                        { success: false, error: 'This time slot is no longer available' },
+                        { status: 409 }
+                    );
+                }
             }
         }
 
@@ -176,7 +336,7 @@ export async function POST(request: NextRequest) {
             .insert({
                 customer_id: customerId,
                 service_id: appointment.service_id,
-                stylist_id: appointment.stylist_id,
+                stylist_id: selectedStylistId,
                 branch_id: stylist.branch_id,
                 date: appointment.date,
                 time: appointment.time,

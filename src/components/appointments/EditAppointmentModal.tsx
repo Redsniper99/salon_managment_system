@@ -46,10 +46,17 @@ export default function EditAppointmentModal({ isOpen, onClose, appointment, onS
                 duration: appointment.duration || 60,
             });
             fetchServices();
-            fetchStylists();
+            // Fetch stylists based on service after form data is set
             setStep('selection');
         }
     }, [isOpen, appointment]);
+
+    // Fetch stylists when service changes
+    useEffect(() => {
+        if (isOpen && formData.serviceId) {
+            fetchStylists(formData.serviceId);
+        }
+    }, [isOpen, formData.serviceId, formData.date]);
 
     const fetchServices = async () => {
         try {
@@ -60,21 +67,23 @@ export default function EditAppointmentModal({ isOpen, onClose, appointment, onS
         }
     };
 
-    const fetchStylists = async () => {
+    const fetchStylists = async (serviceId?: string) => {
         try {
-            const data = await staffService.getStylists(undefined, formData.date || undefined);
+            let data;
+            if (serviceId) {
+                // Filter stylists by service capability
+                data = await staffService.getStylistsByService(serviceId, undefined, formData.date || undefined);
+            } else {
+                // Get all stylists (fallback)
+                data = await staffService.getStylists(undefined, formData.date || undefined);
+            }
             setStylists(data || []);
         } catch (error) {
             console.error('Error fetching stylists:', error);
         }
     };
 
-    // Refresh stylists when date changes
-    useEffect(() => {
-        if (formData.date && isOpen) {
-            fetchStylists();
-        }
-    }, [formData.date]);
+
 
     const handleReview = (e: React.FormEvent) => {
         e.preventDefault();

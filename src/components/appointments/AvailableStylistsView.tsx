@@ -52,13 +52,39 @@ export default function AvailableStylistsView({
             setSelectedTime(null);
 
             try {
-                const results = await schedulingService.getAvailableStylistsWithSlots(
-                    serviceId,
-                    date,
-                    serviceDuration,
-                    branchId
+                // Fetch both detailed availability and consolidated "No Preference" availability
+                const [detailedResults, consolidatedSlots] = await Promise.all([
+                    schedulingService.getAvailableStylistsWithSlots(
+                        serviceId,
+                        date,
+                        serviceDuration,
+                        branchId
+                    ),
+                    schedulingService.getConsolidatedAvailability(
+                        serviceId,
+                        date,
+                        branchId
+                    )
+                ]);
+
+                // Create a "No Preference" synthetic stylist entry if there are consolidated slots
+                const noPreferenceEntry = consolidatedSlots.length > 0 ? {
+                    stylist: {
+                        id: 'NO_PREFERENCE',
+                        name: 'Any Professional',
+                        phone: '', // Placeholder
+                        specializations: []
+                    },
+                    slots: consolidatedSlots,
+                    skillDetails: []
+                } : null;
+
+                // Add "No Preference" at the start of the list
+                setStylistsWithSlots(
+                    noPreferenceEntry
+                        ? [noPreferenceEntry, ...detailedResults]
+                        : detailedResults
                 );
-                setStylistsWithSlots(results);
             } catch (error) {
                 console.error('Error fetching available stylists:', error);
                 setStylistsWithSlots([]);
@@ -201,12 +227,20 @@ export default function AvailableStylistsView({
                             >
                                 {/* Stylist Info */}
                                 <div className="flex items-start gap-3 mb-3">
-                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-semibold text-lg">
-                                        {stylist.name.charAt(0)}
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg ${stylist.id === 'NO_PREFERENCE'
+                                            ? 'bg-gradient-to-br from-indigo-400 to-indigo-600'
+                                            : 'bg-gradient-to-br from-primary-400 to-primary-600'
+                                        }`}>
+                                        {stylist.id === 'NO_PREFERENCE' ? <Sparkles className="w-6 h-6" /> : stylist.name.charAt(0)}
                                     </div>
                                     <div className="flex-1">
                                         <h4 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                                             {stylist.name}
+                                            {stylist.id === 'NO_PREFERENCE' && (
+                                                <span className="text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 px-2 py-0.5 rounded-full">
+                                                    Fastest
+                                                </span>
+                                            )}
                                             {selectedStylist === stylist.id && selectedTime && (
                                                 <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
                                                     Selected

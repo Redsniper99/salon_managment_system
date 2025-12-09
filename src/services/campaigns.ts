@@ -45,7 +45,7 @@ export const campaignService = {
                 throw error;
             }
 
-            console.log('Successfully fetched campaigns:', data?.length || 0);
+
 
             // If campaigns have template_ids, try to fetch template details
             if (data && data.length > 0) {
@@ -188,8 +188,7 @@ export const campaignService = {
             };
         } catch (error) {
             console.error('Error previewing audience:', error);
-            console.error('Segments:', segments);
-            console.error('Full Error:', JSON.stringify(error, null, 2));
+
             throw error;
         }
     },
@@ -307,8 +306,7 @@ export const campaignService = {
             // Get target customers
             const { customers } = await this.previewAudience(campaign.target_segments, campaign.channel);
 
-            console.log(`📤 Sending campaign "${campaign.name}" to ${customers.length} customers...`);
-            console.log(`📋 Using template: ${template.name} (${template.type})`);
+
 
             let sent_count = 0;
             let failed_count = 0;
@@ -336,7 +334,7 @@ export const campaignService = {
                     }
 
                     // Send notification using template type
-                    console.log(`📧 Sending to ${customer.name} (${customer.email || customer.phone})...`);
+
 
                     const result = await notificationsService.sendNotification(
                         customer.id,
@@ -358,7 +356,7 @@ export const campaignService = {
                         .eq('id', sendRecord.id);
 
                     sent_count++;
-                    console.log(`✅ Sent to ${customer.name}`);
+
 
                 } catch (error) {
                     console.error(`❌ Failed to send to customer ${customer.name}:`, error);
@@ -384,7 +382,7 @@ export const campaignService = {
                 failed_count
             });
 
-            console.log(`✅ Campaign completed! Sent: ${sent_count}, Failed: ${failed_count}`);
+
 
             return { success: true, sent_count, failed_count };
         } catch (error: any) {

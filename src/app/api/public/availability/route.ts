@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getAdminClient } from '@/lib/supabase';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// Use Service Role Key to bypass RLS and read appointments
+const supabase = getAdminClient();
 
 interface TimeSlot {
     time: string;
@@ -114,13 +113,16 @@ export async function GET(request: NextRequest) {
         // Get existing appointments
         const { data: appointments } = await supabase
             .from('appointments')
-            .select('time, services(duration)')
+            .select('start_time')
             .eq('stylist_id', stylistId)
-            .eq('date', date)
-            .neq('status', 'Cancelled');
+            .eq('appointment_date', date)
+            .neq('status', 'Cancelled')
+            .neq('status', 'NoShow')
+            .neq('status', 'Completed');
 
         // Generate time slots
         const workingHours = stylist.working_hours || { start: '09:00', end: '18:00' };
+
         const slots: TimeSlot[] = [];
 
         const [startHour, startMinute] = workingHours.start.split(':').map(Number);
@@ -164,9 +166,9 @@ export async function GET(request: NextRequest) {
             let isBooked = false;
             if (appointments && !isBreak) {
                 for (const apt of appointments) {
-                    const [aptH, aptM] = apt.time.split(':').map(Number);
+                    const [aptH, aptM] = apt.start_time.split(':').map(Number);
                     const aptStart = aptH * 60 + aptM;
-                    const aptDuration = (apt.services as any)?.duration || 60;
+                    const aptDuration = 60; // Default duration since join removed
                     const aptEnd = aptStart + aptDuration;
 
                     if (currentTime < aptEnd && slotEnd > aptStart) {

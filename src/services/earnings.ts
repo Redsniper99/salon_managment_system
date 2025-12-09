@@ -17,7 +17,7 @@ export const earningsService = {
      */
     async updateEarningsForInvoice(invoiceId: string) {
         try {
-            console.log('Updating earnings for invoice:', invoiceId);
+
             // Get invoice details
             const { data: invoice, error: invoiceError } = await supabase
                 .from('invoices')
@@ -54,7 +54,7 @@ export const earningsService = {
                 .single();
 
             const commissionRate = commissionSettings?.commission_percentage || 40;
-            console.log(`Using commission rate: ${commissionRate}% for stylist: ${stylistId}`);
+
 
             // Calculate service revenue (only services, not products/manual fees)
             const items = invoice.items as any[];
@@ -62,7 +62,7 @@ export const earningsService = {
                 .filter((item: any) => item.type === 'service')
                 .reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
 
-            console.log(`Service revenue: ${serviceRevenue}`);
+
 
             if (serviceRevenue === 0) {
                 console.warn('Service revenue is 0, skipping earnings update');
@@ -81,7 +81,7 @@ export const earningsService = {
 
             if (existingEarning) {
                 // Update existing record
-                console.log('Updating existing earnings record:', existingEarning.id);
+
                 await supabase
                     .from('staff_earnings')
                     .update({
@@ -94,7 +94,7 @@ export const earningsService = {
                     .eq('id', existingEarning.id);
             } else {
                 // Create new record
-                console.log('Creating new earnings record for date:', date);
+
                 await supabase
                     .from('staff_earnings')
                     .insert({
