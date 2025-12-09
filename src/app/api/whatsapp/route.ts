@@ -53,16 +53,22 @@ export async function POST(req: NextRequest) {
         const body = JSON.parse(rawBody);
         const supabase = getAdminClient();
 
+        console.log('📩 WhatsApp Webhook received:', JSON.stringify(body, null, 2));
+
         // Check if this is a message from a user
         const entry = body.entry?.[0];
         const changes = entry?.changes?.[0];
         const value = changes?.value;
         const message = value?.messages?.[0];
 
+        console.log('📨 Extracted message:', message);
+
         if (message) {
             const from = message.from; // Phone number
             const text = message.text?.body || '';
             const interactive = message.interactive;
+
+            console.log('📱 From:', from, '| Text:', text);
 
             // Get current session
             let { data: session } = await supabase
