@@ -380,21 +380,16 @@ export async function POST(req: NextRequest) {
                 const { date, time, service_id, service_name } = session.temp_data;
 
                 if (prefId === 'STYLIST_NO_PREF') {
-                    // Confirm booking with no preference
+                    // Ask for customer name
                     await sendWhatsAppMessage(from, createTextMessage(
-                        `📋 *Booking Summary*\n\n` +
-                        `📅 Date: ${date}\n` +
-                        `⏰ Time: ${time}\n` +
-                        `💇 Service: ${service_name}\n` +
-                        `👤 Stylist: Any Available\n\n` +
-                        `Reply *CONFIRM* to book or *CANCEL* to start over.`
+                        `� *Almost done!*\n\nPlease reply with your *name* for the booking:`
                     ));
 
                     await supabase
                         .from('bot_sessions')
                         .update({
-                            status: 'CONFIRM_BOOKING',
-                            temp_data: { ...session.temp_data, stylist_id: 'NO_PREFERENCE' }
+                            status: 'ENTER_NAME',
+                            temp_data: { ...session.temp_data, stylist_id: 'NO_PREFERENCE', stylist_name: 'Any Available' }
                         })
                         .eq('phone_number', from);
 
@@ -408,13 +403,13 @@ export async function POST(req: NextRequest) {
 
                     if (stylists.length === 0) {
                         await sendWhatsAppMessage(from, createTextMessage(
-                            'No specific stylists available for this slot. We will assign the best available stylist.\n\nReply *CONFIRM* to book or *CANCEL* to start over.'
+                            '👤 *Almost done!*\n\nNo specific stylists available. We will assign the best available.\n\nPlease reply with your *name* for the booking:'
                         ));
                         await supabase
                             .from('bot_sessions')
                             .update({
-                                status: 'CONFIRM_BOOKING',
-                                temp_data: { ...session.temp_data, stylist_id: 'NO_PREFERENCE' }
+                                status: 'ENTER_NAME',
+                                temp_data: { ...session.temp_data, stylist_id: 'NO_PREFERENCE', stylist_name: 'Any Available' }
                             })
                             .eq('phone_number', from);
                     } else {
@@ -438,18 +433,116 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            // 9. Handle Stylist Selection
+            // 9. Handle Stylist Selection → Ask for Name
             else if (session.status === 'SELECT_STYLIST' && interactive?.list_reply) {
                 const stylistId = interactive.list_reply.id.replace('STY_', '');
                 const stylistName = interactive.list_reply.title;
-                const { date, time, service_name } = session.temp_data;
+
+                await sendWhatsAppMessage(from, createTextMessage(
+                    `👤 *Almost done!*\n\nYou selected *${stylistName}*.\n\nPlease reply with your *name* for the booking:`
+                ));
+
+                await supabase
+                    .from('bot_sessions')
+                    .update({
+                        status: 'ENTER_NAME',
+                        temp_data: { ...session.temp_data, stylist_id: stylistId, stylist_name: stylistName }
+                    })
+                    .eq('phone_number', from);
+            }
+
+            // 10. Handle Name Input → Ask for Email
+            else if (session.status === 'ENTER_NAME' && text) {
+                const customerName = text.trim();
+
+                if (customerName.length < 2) {
+                    await sendWhatsAppMessage(from, createTextMessage('❌ Please enter a valid name (at least 2 characters).'));
+                    return NextResponse.json({ success: true });
+                }
+
+                await sendWhatsAppMessage(from, createListMessage(
+                    'Email Confirmation',
+                    `Thanks, *${customerName}*! 📧\n\nWould you like to receive an email confirmation?`,
+                    'Choose',
+                    [{
+                        title: 'Options',
+                        rows: [
+                            { id: 'EMAIL_YES', title: 'Yes, send email', description: 'Enter your email' },
+                            { id: 'EMAIL_NO', title: 'No, skip email', description: 'Continue without email' }
+                        ]
+                    }]
+                ));
+
+                await supabase
+                    .from('bot_sessions')
+                    .update({
+                        status: 'ASK_EMAIL',
+                        temp_data: { ...session.temp_data, customer_name: customerName }
+                    })
+                    .eq('phone_number', from);
+            }
+
+            // 11. Handle Email Preference
+            else if (session.status === 'ASK_EMAIL' && interactive?.list_reply) {
+                const emailPref = interactive.list_reply.id;
+
+                if (emailPref === 'EMAIL_YES') {
+                    await sendWhatsAppMessage(from, createTextMessage(
+                        '📧 Please reply with your *email address*:'
+                    ));
+
+                    await supabase
+                        .from('bot_sessions')
+                        .update({ status: 'ENTER_EMAIL' })
+                        .eq('phone_number', from);
+
+                } else {
+                    // Skip email, show summary
+                    const { date, time, service_name, stylist_name, customer_name } = session.temp_data;
+
+                    await sendWhatsAppMessage(from, createTextMessage(
+                        `📋 *Booking Summary*\n\n` +
+                        `� Name: ${customer_name}\n` +
+                        `�📅 Date: ${date}\n` +
+                        `⏰ Time: ${time}\n` +
+                        `💇 Service: ${service_name}\n` +
+                        `✂️ Stylist: ${stylist_name}\n\n` +
+                        `Reply *CONFIRM* to book or *CANCEL* to start over.`
+                    ));
+
+                    await supabase
+                        .from('bot_sessions')
+                        .update({
+                            status: 'CONFIRM_BOOKING',
+                            temp_data: { ...session.temp_data, customer_email: null }
+                        })
+                        .eq('phone_number', from);
+                }
+            }
+
+            // 12. Handle Email Input
+            else if (session.status === 'ENTER_EMAIL' && text) {
+                const email = text.trim().toLowerCase();
+
+                // Simple email validation
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    await sendWhatsAppMessage(from, createTextMessage(
+                        '❌ Invalid email format. Please enter a valid email (e.g., name@example.com):'
+                    ));
+                    return NextResponse.json({ success: true });
+                }
+
+                const { date, time, service_name, stylist_name, customer_name } = session.temp_data;
 
                 await sendWhatsAppMessage(from, createTextMessage(
                     `📋 *Booking Summary*\n\n` +
+                    `👤 Name: ${customer_name}\n` +
+                    `📧 Email: ${email}\n` +
                     `📅 Date: ${date}\n` +
                     `⏰ Time: ${time}\n` +
                     `💇 Service: ${service_name}\n` +
-                    `👤 Stylist: ${stylistName}\n\n` +
+                    `✂️ Stylist: ${stylist_name}\n\n` +
                     `Reply *CONFIRM* to book or *CANCEL* to start over.`
                 ));
 
@@ -457,43 +550,53 @@ export async function POST(req: NextRequest) {
                     .from('bot_sessions')
                     .update({
                         status: 'CONFIRM_BOOKING',
-                        temp_data: { ...session.temp_data, stylist_id: stylistId, stylist_name: stylistName }
+                        temp_data: { ...session.temp_data, customer_email: email }
                     })
                     .eq('phone_number', from);
             }
 
-            // 10. Handle Booking Confirmation
+            // 13. Handle Booking Confirmation
             else if (session.status === 'CONFIRM_BOOKING' && text) {
                 const action = text.toLowerCase().trim();
 
                 if (action === 'confirm') {
-                    const { date, time, service_id, stylist_id } = session.temp_data;
+                    const { date, time, service_id, stylist_id, customer_name, customer_email } = session.temp_data;
 
-                    // Call booking API
+                    // Call booking API with full customer data
                     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.salonflow.space';
                     const bookRes = await fetch(`${baseUrl}/api/public/book`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            customer_phone: from,
-                            customer_name: 'WhatsApp Customer',
-                            service_ids: [service_id],
-                            stylist_id: stylist_id,
-                            date: date,
-                            time: time
+                            customer: {
+                                name: customer_name,
+                                phone: from,
+                                email: customer_email || null
+                            },
+                            appointment: {
+                                service_id: service_id,
+                                stylist_id: stylist_id,
+                                date: date,
+                                time: time
+                            }
                         })
                     });
 
                     const bookData = await bookRes.json();
 
                     if (bookData.success) {
-                        await sendWhatsAppMessage(from, createTextMessage(
-                            `🎉 *Booking Confirmed!*\n\n` +
-                            `Your appointment has been scheduled.\n` +
-                            `📅 ${date} at ${time}\n\n` +
-                            `We look forward to seeing you!\n\n` +
-                            `Type "Hi" for a new booking or "Check My Booking" to view appointments.`
-                        ));
+                        let confirmMsg = `🎉 *Booking Confirmed!*\n\n` +
+                            `Thank you, ${customer_name}!\n` +
+                            `Your appointment has been scheduled.\n\n` +
+                            `📅 ${date} at ${time}\n`;
+
+                        if (customer_email) {
+                            confirmMsg += `📧 Confirmation sent to ${customer_email}\n`;
+                        }
+
+                        confirmMsg += `\nWe look forward to seeing you!\n\nType "Hi" for a new booking.`;
+
+                        await sendWhatsAppMessage(from, createTextMessage(confirmMsg));
                     } else {
                         await sendWhatsAppMessage(from, createTextMessage(
                             `❌ Booking failed: ${bookData.error || 'Unknown error'}\n\nPlease try again. Type "menu" to start over.`
@@ -525,4 +628,5 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
+
 
