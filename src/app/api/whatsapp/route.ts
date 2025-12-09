@@ -116,31 +116,82 @@ export async function POST(req: NextRequest) {
                 const selectedId = interactive.list_reply.id;
 
                 if (selectedId === 'BOOK_APPT') {
-                    // Fetch Services
-                    const { data: services } = await supabase
-                        .from('services')
-                        .select('id, name')
-                        .eq('is_active', true)
-                        .limit(10); // WA list limit is 10
+                    // Show service categories first
+                    const categories = ['Hair', 'Beard', 'Facial', 'Bridal', 'Kids', 'Spa', 'Other'];
+                    const rows = categories.map(cat => ({ id: `CAT_${cat}`, title: cat }));
 
-                    if (services && services.length > 0) {
-                        const rows = services.map((s: any) => ({ id: s.id, title: s.name.substring(0, 24) }));
-                        await sendWhatsAppMessage(from, createListMessage(
-                            'Select Service',
-                            'Choose a service to book:',
-                            'Services',
-                            [{ title: 'Available Services', rows: rows }]
-                        ));
+                    await sendWhatsAppMessage(from, createListMessage(
+                        'Select Category',
+                        'What type of service are you looking for?',
+                        'Categories',
+                        [{ title: 'Service Categories', rows: rows }]
+                    ));
 
-                        await supabase
-                            .from('bot_sessions')
-                            .update({ status: 'SELECT_SERVICE' })
-                            .eq('phone_number', from);
-                    } else {
-                        await sendWhatsAppMessage(from, createTextMessage('No services available right now.'));
-                    }
+                    await supabase
+                        .from('bot_sessions')
+                        .update({ status: 'SELECT_CATEGORY' })
+                        .eq('phone_number', from);
+
                 } else if (selectedId === 'CHECK_APPT') {
-                    await sendWhatsAppMessage(from, createTextMessage('This feature is coming soon!'));
+                    // Check for existing appointments
+                    const { data: appointments } = await supabase
+                        .from('appointments')
+                        .select('*, services(*), staff(name)')
+                        .or(`status.eq.Pending,status.eq.Confirmed`)
+                        .order('appointment_date', { ascending: true })
+                        .limit(3);
+
+                    if (appointments && appointments.length > 0) {
+                        let msg = '📅 *Your Upcoming Appointments:*\n\n';
+                        appointments.forEach((apt: any, i: number) => {
+                            const date = new Date(apt.appointment_date).toLocaleDateString();
+                            msg += `${i + 1}. ${date} at ${apt.start_time}\n   Status: ${apt.status}\n\n`;
+                        });
+                        await sendWhatsAppMessage(from, createTextMessage(msg));
+                    } else {
+                        await sendWhatsAppMessage(from, createTextMessage('You have no upcoming appointments. Type "Hi" to book one!'));
+                    }
+                }
+            }
+
+            // 3. Handle Category Selection
+            else if (session.status === 'SELECT_CATEGORY' && interactive?.list_reply) {
+                const categoryId = interactive.list_reply.id;
+                const category = categoryId.replace('CAT_', ''); // Extract category name
+
+                // Fetch services in this category
+                const { data: services } = await supabase
+                    .from('services')
+                    .select('id, name, price, duration')
+                    .eq('category', category)
+                    .eq('is_active', true)
+                    .limit(10);
+
+                if (services && services.length > 0) {
+                    const rows = services.map((s: any) => ({
+                        id: s.id,
+                        title: s.name.substring(0, 24),
+                        description: `Rs.${s.price} • ${s.duration}min`
+                    }));
+
+                    await sendWhatsAppMessage(from, createListMessage(
+                        `${category} Services`,
+                        `Select a ${category.toLowerCase()} service:`,
+                        'Services',
+                        [{ title: 'Available Services', rows: rows }]
+                    ));
+
+                    await supabase
+                        .from('bot_sessions')
+                        .update({
+                            status: 'SELECT_SERVICE',
+                            temp_data: { category }
+                        })
+                        .eq('phone_number', from);
+                } else {
+                    await sendWhatsAppMessage(from, createTextMessage(
+                        `No ${category} services available. Type "menu" to try another category.`
+                    ));
                 }
             }
 
