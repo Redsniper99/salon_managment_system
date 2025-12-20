@@ -21,6 +21,7 @@ import {
     DollarSign,
     Target,
     Megaphone,
+    Gift,
     LucideIcon,
     ChevronLeft,
     ChevronRight,
@@ -87,6 +88,12 @@ const navItems: NavItem[] = [
         label: 'Promo Codes',
         href: '/promos',
         icon: Tag,
+        allowedRoles: ['Owner', 'Manager'],
+    },
+    {
+        label: 'Loyalty Program',
+        href: '/loyalty',
+        icon: Gift,
         allowedRoles: ['Owner', 'Manager'],
     },
     {

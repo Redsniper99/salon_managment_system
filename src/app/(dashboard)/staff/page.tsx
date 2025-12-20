@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Search, Edit, Trash2, X, Check, Loader, Copy, AlertCircle, Sparkles } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
+import PhoneInput from '@/components/shared/PhoneInput';
 import { Staff, Branch, Service } from '@/lib/types';
 import { staffService } from '@/services/staff';
 import { branchesService } from '@/services/branches';
@@ -408,12 +409,10 @@ export default function StaffPage() {
                                     />
                                 )}
 
-                                <Input
+                                <PhoneInput
                                     label="Phone"
-                                    type="tel"
                                     value={formData.phone}
-                                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                    placeholder="+94 77 123 4567"
+                                    onChange={(value) => setFormData({ ...formData, phone: value })}
                                 />
 
                                 <div>

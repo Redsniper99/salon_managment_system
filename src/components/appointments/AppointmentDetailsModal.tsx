@@ -44,6 +44,12 @@ export default function AppointmentDetailsModal({
     const handleStatusChange = async (newStatus: AppointmentStatus) => {
         if (newStatus === appointment.status) return;
 
+        // Block changes if appointment is already Completed
+        if (appointment.status === 'Completed') {
+            alert('Cannot change status of a completed appointment. Payment has been processed via POS.');
+            return;
+        }
+
         setUpdating(true);
         try {
             await onStatusUpdate(newStatus);
@@ -51,6 +57,8 @@ export default function AppointmentDetailsModal({
             setUpdating(false);
         }
     };
+
+    const isCompleted = appointment.status === 'Completed';
 
     return (
         <Modal
@@ -65,18 +73,23 @@ export default function AppointmentDetailsModal({
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Status
                     </label>
+                    {isCompleted && (
+                        <p className="text-sm text-amber-600 dark:text-amber-400 mb-2">
+                            ✓ Completed via POS - Status locked
+                        </p>
+                    )}
                     <div className="flex flex-wrap gap-2">
                         {allStatuses.map((status) => (
                             <button
                                 key={status}
                                 onClick={() => handleStatusChange(status)}
-                                disabled={updating || status === appointment.status}
+                                disabled={updating || status === appointment.status || isCompleted}
                                 className={cn(
                                     'px-3 py-1.5 rounded-lg text-sm font-medium border-2 transition-all',
                                     appointment.status === status
                                         ? statusColors[status] + ' ring-2 ring-offset-2 ring-primary-500'
                                         : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-primary-400',
-                                    updating && 'opacity-50 cursor-not-allowed'
+                                    (updating || isCompleted) && 'opacity-50 cursor-not-allowed'
                                 )}
                             >
                                 {status}

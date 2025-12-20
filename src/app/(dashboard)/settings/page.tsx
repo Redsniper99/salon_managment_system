@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Lock, DollarSign, Save, Loader, Mail, Eye, EyeOff, CheckCircle, XCircle, CalendarDays, Clock, Trash2, Plus } from 'lucide-react';
+import { Lock, DollarSign, Save, Loader, Mail, Eye, EyeOff, CheckCircle, XCircle, CalendarDays, Clock, Trash2, Plus, Gift } from 'lucide-react';
+import { loyaltyService, LoyaltySettings as LoyaltySettingsType } from '@/services/loyalty';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
 import { useAuth } from '@/lib/auth';
@@ -833,9 +834,261 @@ function AvailabilitySettings({ user, showMessage }: AvailabilitySettingsProps) 
     );
 }
 
+interface LoyaltySettingsTabProps {
+    showMessage: ShowMessage;
+}
+
+// Loyalty Settings Component
+function LoyaltySettingsTab({ showMessage }: LoyaltySettingsTabProps) {
+    const [loading, setLoading] = useState(false);
+    const [settings, setSettings] = useState<LoyaltySettingsType | null>(null);
+
+    const fetchSettings = useCallback(async () => {
+        try {
+            setLoading(true);
+            const data = await loyaltyService.getSettings();
+            setSettings(data);
+        } catch (error) {
+            console.error('Error fetching loyalty settings:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchSettings();
+    }, [fetchSettings]);
+
+    const handleSave = async () => {
+        if (!settings) return;
+        setLoading(true);
+        try {
+            await loyaltyService.updateSettings(settings);
+            showMessage('success', 'Loyalty settings saved successfully');
+        } catch (error) {
+            console.error('Error saving loyalty settings:', error);
+            showMessage('error', 'Failed to save loyalty settings');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleToggle = (field: keyof LoyaltySettingsType, value: boolean) => {
+        if (!settings) return;
+        setSettings({ ...settings, [field]: value });
+    };
+
+    const handleChange = (field: keyof LoyaltySettingsType, value: number) => {
+        if (!settings) return;
+        setSettings({ ...settings, [field]: value });
+    };
+
+    if (!settings) {
+        return (
+            <div className="flex items-center justify-center py-12">
+                <Loader className="h-6 w-6 animate-spin text-primary-600" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-8">
+            <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                    Loyalty Program Configuration
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Configure one or more loyalty options for your customers
+                </p>
+            </div>
+
+            {/* Option 1: Loyalty Cards */}
+            <div className={`p-6 rounded-xl border-2 transition-all ${settings.option_card_enabled
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'
+                }`}>
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                            <Gift className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div>
+                            <h4 className="font-semibold text-gray-900 dark:text-white">Annual Loyalty Card</h4>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Sell cards for year-long discount</p>
+                        </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={settings.option_card_enabled}
+                            onChange={(e) => handleToggle('option_card_enabled', e.target.checked)}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                    </label>
+                </div>
+
+                {settings.option_card_enabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Card Price (Rs)</label>
+                            <Input
+                                type="number"
+                                value={settings.card_price}
+                                onChange={(e) => handleChange('card_price', parseFloat(e.target.value))}
+                                min="0"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Discount (%)</label>
+                            <Input
+                                type="number"
+                                value={settings.card_discount_percent}
+                                onChange={(e) => handleChange('card_discount_percent', parseFloat(e.target.value))}
+                                min="0"
+                                max="100"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Validity (Days)</label>
+                            <Input
+                                type="number"
+                                value={settings.card_validity_days}
+                                onChange={(e) => handleChange('card_validity_days', parseInt(e.target.value))}
+                                min="1"
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Option 2: Points System */}
+            <div className={`p-6 rounded-xl border-2 transition-all ${settings.option_points_enabled
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'
+                }`}>
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                            <DollarSign className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                            <h4 className="font-semibold text-gray-900 dark:text-white">Points System</h4>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Earn points for every purchase</p>
+                        </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={settings.option_points_enabled}
+                            onChange={(e) => handleToggle('option_points_enabled', e.target.checked)}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                    </label>
+                </div>
+
+                {settings.option_points_enabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">LKR per Point</label>
+                            <select
+                                value={settings.points_threshold_amount}
+                                onChange={(e) => handleChange('points_threshold_amount', parseInt(e.target.value))}
+                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
+                            >
+                                <option value={100}>Rs 100 = 1 Point</option>
+                                <option value={200}>Rs 200 = 1 Point</option>
+                                <option value={250}>Rs 250 = 1 Point</option>
+                                <option value={500}>Rs 500 = 1 Point</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Point Value (Rs)</label>
+                            <Input
+                                type="number"
+                                value={settings.points_redemption_value}
+                                onChange={(e) => handleChange('points_redemption_value', parseFloat(e.target.value))}
+                                min="1"
+                            />
+                            <p className="mt-1 text-xs text-gray-500">1 point = Rs {settings.points_redemption_value}</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Option 3: Visit Rewards */}
+            <div className={`p-6 rounded-xl border-2 transition-all ${settings.option_visits_enabled
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'
+                }`}>
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                            <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+                        </div>
+                        <div>
+                            <h4 className="font-semibold text-gray-900 dark:text-white">Visit Rewards</h4>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Discount on Nth visit</p>
+                        </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={settings.option_visits_enabled}
+                            onChange={(e) => handleToggle('option_visits_enabled', e.target.checked)}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                    </label>
+                </div>
+
+                {settings.option_visits_enabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reward Every</label>
+                            <select
+                                value={settings.visit_reward_frequency}
+                                onChange={(e) => handleChange('visit_reward_frequency', parseInt(e.target.value))}
+                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
+                            >
+                                <option value={5}>Every 5th Visit</option>
+                                <option value={10}>Every 10th Visit</option>
+                                <option value={15}>Every 15th Visit</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Discount (%)</label>
+                            <Input
+                                type="number"
+                                value={settings.visit_reward_discount_percent}
+                                onChange={(e) => handleChange('visit_reward_discount_percent', parseFloat(e.target.value))}
+                                min="0"
+                                max="100"
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                <Button
+                    variant="primary"
+                    onClick={handleSave}
+                    disabled={loading}
+                    leftIcon={loading ? <Loader className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
+                >
+                    {loading ? 'Saving...' : 'Save Loyalty Settings'}
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 export default function SettingsPage() {
     const { user, hasRole } = useAuth();
-    const [activeTab, setActiveTab] = useState<'passwords' | 'commissions' | 'salaries' | 'scheduling' | 'availability'>('passwords');
+    const [activeTab, setActiveTab] = useState<'passwords' | 'commissions' | 'salaries' | 'scheduling' | 'availability' | 'loyalty'>('passwords');
     const [loading, setLoading] = useState(false);
     const [staff, setStaff] = useState<any[]>([]);
     const [commissionSettings, setCommissionSettings] = useState<any[]>([]);
@@ -957,6 +1210,19 @@ export default function SettingsPage() {
                         My Availability
                     </button>
                 )}
+
+                {hasRole(['Owner']) && (
+                    <button
+                        onClick={() => setActiveTab('loyalty')}
+                        className={`px-4 py-2 font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'loyalty'
+                            ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                            : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                            }`}
+                    >
+                        <Gift className="h-4 w-4 inline mr-2" />
+                        Loyalty Program
+                    </button>
+                )}
             </div>
 
             {/* Tab Content */}
@@ -1043,6 +1309,10 @@ export default function SettingsPage() {
 
                 {activeTab === 'availability' && (
                     <AvailabilitySettings user={user} showMessage={showMessage} />
+                )}
+
+                {activeTab === 'loyalty' && hasRole(['Owner']) && (
+                    <LoyaltySettingsTab showMessage={showMessage} />
                 )}
             </div>
         </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '@/components/shared/Modal';
 import Input from '@/components/shared/Input';
+import PhoneInput from '@/components/shared/PhoneInput';
 import Button from '@/components/shared/Button';
 import { customersService } from '@/services/customers';
 import { useToast } from '@/context/ToastContext';
@@ -82,12 +83,11 @@ export default function AddCustomerModal({ isOpen, onClose, onSuccess, customerT
                     placeholder="e.g. Jane Doe"
                 />
 
-                <Input
+                <PhoneInput
                     label="Phone Number"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, phone: value })}
                     required
-                    placeholder="e.g. +94 77 123 4567"
                 />
 
                 <Input

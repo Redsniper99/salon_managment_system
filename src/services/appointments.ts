@@ -300,5 +300,73 @@ export const appointmentsService = {
             .eq('id', id);
 
         if (error) throw error;
+    },
+
+    /**
+     * Get today's appointments for a specific customer (for POS)
+     */
+    async getCustomerTodayAppointments(customerId: string) {
+        // Use local date instead of UTC to match appointment dates correctly
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
+
+        console.log('Fetching appointments for customer:', customerId, 'on date:', today);
+
+        // First get appointments
+        const { data: appointments, error } = await supabase
+            .from('appointments')
+            .select(`
+                *,
+                stylist:staff(id, name)
+            `)
+            .eq('customer_id', customerId)
+            .eq('appointment_date', today)
+            .in('status', ['Pending', 'Confirmed', 'InService'])
+            .order('start_time', { ascending: true });
+
+        if (error) throw error;
+        if (!appointments || appointments.length === 0) return [];
+
+        // Fetch service details for each appointment
+        const appointmentsWithServices = await Promise.all(
+            appointments.map(async (appointment) => {
+                if (appointment.services && appointment.services.length > 0) {
+                    const { data: servicesData } = await supabase
+                        .from('services')
+                        .select('id, name, price, duration')
+                        .in('id', appointment.services);
+
+                    return {
+                        ...appointment,
+                        services_data: servicesData || []
+                    };
+                }
+                return {
+                    ...appointment,
+                    services_data: []
+                };
+            })
+        );
+
+        return appointmentsWithServices;
+    },
+
+    /**
+     * Mark multiple appointments as completed via POS (after payment)
+     */
+    async markAppointmentsCompletedViaPOS(appointmentIds: string[]) {
+        if (!appointmentIds || appointmentIds.length === 0) return [];
+
+        const { data, error } = await supabase
+            .from('appointments')
+            .update({ status: 'Completed' })
+            .in('id', appointmentIds)
+            .select();
+
+        if (error) throw error;
+        return data;
     }
 };

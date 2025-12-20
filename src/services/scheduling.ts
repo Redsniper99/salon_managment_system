@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { getLocalDateString } from '@/lib/utils';
 
 interface TimeSlot {
     time: string;
@@ -97,7 +98,7 @@ export const schedulingService = {
 
 
             // Check for emergency unavailability
-            const today = new Date().toISOString().split('T')[0];
+            const today = getLocalDateString();
             if (stylist.is_emergency_unavailable && date >= today) {
 
                 return [];

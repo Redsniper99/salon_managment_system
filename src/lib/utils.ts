@@ -5,6 +5,44 @@ export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
+// Sri Lanka timezone utilities
+export const SRI_LANKA_TIMEZONE = 'Asia/Colombo';
+
+/**
+ * Get today's date in Sri Lanka timezone as YYYY-MM-DD string
+ * This fixes the issue where toISOString() returns UTC date which may differ from local date
+ */
+export function getLocalDateString(date?: Date): string {
+    const d = date || new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get current datetime in Sri Lanka timezone as ISO string
+ */
+export function getLocalDateTime(): string {
+    return new Date().toLocaleString('sv-SE', { timeZone: SRI_LANKA_TIMEZONE }).replace(' ', 'T');
+}
+
+/**
+ * Get the start of today in local timezone
+ */
+export function getTodayStart(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+}
+
+/**
+ * Get the start of a specific month in local timezone
+ */
+export function getMonthStart(date?: Date): string {
+    const d = date || new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
 export function formatCurrency(amount: number): string {
     return `Rs ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

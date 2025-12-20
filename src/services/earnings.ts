@@ -285,5 +285,130 @@ export const earningsService = {
             console.error('Error getting earnings summary:', error);
             throw error;
         }
+    },
+
+    /**
+     * Update earnings for multiple appointments in a single invoice (from POS)
+     */
+    async updateEarningsForMultipleAppointments(
+        appointmentIds: string[],
+        invoiceItems: any[],
+        invoiceId: string
+    ) {
+        try {
+            // Get all appointments with stylist info
+            const { data: appointments, error: appointmentsError } = await supabase
+                .from('appointments')
+                .select(`
+                    id,
+                    stylist_id,
+                    appointment_date,
+                    services
+                `)
+                .in('id', appointmentIds);
+
+            if (appointmentsError) throw appointmentsError;
+            if (!appointments || appointments.length === 0) {
+                console.warn('No appointments found for earnings update');
+                return;
+            }
+
+            // Get commission settings for stylist role
+            const { data: commissionSettings } = await supabase
+                .from('commission_settings')
+                .select('*')
+                .eq('role', 'Stylist')
+                .eq('is_active', true)
+                .single();
+
+            const commissionRate = commissionSettings?.commission_percentage || 40;
+
+            // Group invoice items by appointment (if appointmentId is present)
+            // Otherwise, distribute equally among appointments
+            const appointmentServicesMap = new Map<string, string[]>();
+            appointments.forEach(apt => {
+                appointmentServicesMap.set(apt.id, apt.services || []);
+            });
+
+            // Calculate earnings per stylist per appointment
+            for (const appointment of appointments) {
+                const stylistId = appointment.stylist_id;
+                const date = appointment.appointment_date;
+
+                if (!stylistId) {
+                    console.warn(`Appointment ${appointment.id} has no stylist assigned`);
+                    continue;
+                }
+
+                // Find items belonging to this appointment's services
+                let serviceRevenue = 0;
+                const appointmentServices = appointment.services || [];
+
+                for (const item of invoiceItems) {
+                    // If item has appointmentId, match directly
+                    if (item.appointmentId === appointment.id) {
+                        if (item.type === 'service' || item.type === 'appointment') {
+                            serviceRevenue += (item.price || 0) * (item.quantity || 1);
+                        }
+                    }
+                    // If item doesn't have appointmentId but has serviceId, check if service belongs to this appointment
+                    else if (!item.appointmentId && item.serviceId && appointmentServices.includes(item.serviceId)) {
+                        serviceRevenue += (item.price || 0) * (item.quantity || 1);
+                    }
+                }
+
+                // If no direct matching, distribute services equally (for backward compatibility)
+                if (serviceRevenue === 0 && appointments.length > 0) {
+                    const totalServiceRevenue = invoiceItems
+                        .filter((item: any) => item.type === 'service' || item.type === 'appointment')
+                        .reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+                    serviceRevenue = totalServiceRevenue / appointments.length;
+                }
+
+                if (serviceRevenue === 0) {
+                    continue;
+                }
+
+                const commissionAmount = (serviceRevenue * commissionRate) / 100;
+
+                // Get or create earnings record for this date
+                const { data: existingEarning } = await supabase
+                    .from('staff_earnings')
+                    .select('*')
+                    .eq('staff_id', stylistId)
+                    .eq('date', date)
+                    .single();
+
+                if (existingEarning) {
+                    // Update existing record
+                    await supabase
+                        .from('staff_earnings')
+                        .update({
+                            service_revenue: existingEarning.service_revenue + serviceRevenue,
+                            commission_amount: existingEarning.commission_amount + commissionAmount,
+                            total_earnings: existingEarning.total_earnings + commissionAmount,
+                            appointments_count: existingEarning.appointments_count + 1,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', existingEarning.id);
+                } else {
+                    // Create new record
+                    await supabase
+                        .from('staff_earnings')
+                        .insert({
+                            staff_id: stylistId,
+                            date,
+                            service_revenue: serviceRevenue,
+                            commission_amount: commissionAmount,
+                            salary_amount: 0,
+                            total_earnings: commissionAmount,
+                            appointments_count: 1
+                        });
+                }
+            }
+        } catch (error) {
+            console.error('Error updating earnings for multiple appointments:', error);
+            throw error;
+        }
     }
 };

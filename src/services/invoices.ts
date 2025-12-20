@@ -1,18 +1,22 @@
 import { supabase } from '@/lib/supabase';
 import { earningsService } from './earnings';
+import { getLocalDateString } from '@/lib/utils';
 
 export const invoicesService = {
     /**
-     * Create a new invoice
+     * Create a new invoice (supports multiple appointments)
      */
     async createInvoice(invoice: {
         customer_id: string;
         branch_id: string;
         appointment_id?: string;
+        appointment_ids?: string[]; // NEW: Support multiple appointments
         items: Array<{
-            type: 'service' | 'manual';
+            type: 'service' | 'manual' | 'appointment';
             serviceId?: string;
+            appointmentId?: string;
             description: string;
+            name?: string;
             price: number;
             quantity: number;
         }>;
@@ -24,18 +28,43 @@ export const invoicesService = {
         payment_method: string;
         created_by: string;
     }) {
+        // For backwards compatibility, use first appointment_id if appointment_ids provided
+        const primaryAppointmentId = invoice.appointment_ids?.[0] || invoice.appointment_id;
+
+        // Generate invoice number
+        const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
         const { data, error } = await supabase
             .from('invoices')
-            .insert(invoice)
+            .insert({
+                invoice_number: invoiceNumber,
+                customer_id: invoice.customer_id,
+                branch_id: invoice.branch_id,
+                appointment_id: primaryAppointmentId || null,
+                items: invoice.items,
+                subtotal: invoice.subtotal,
+                discount: invoice.discount,
+                promo_code: invoice.promo_code || null,
+                tax: invoice.tax,
+                total: invoice.total,
+                payment_method: invoice.payment_method,
+                created_by: invoice.created_by
+            })
             .select()
             .single();
 
         if (error) throw error;
 
-        // Automatically calculate earnings if invoice has an appointment
-        if (data && invoice.appointment_id) {
+        // Update earnings for all linked appointments
+        const appointmentIds = invoice.appointment_ids || (invoice.appointment_id ? [invoice.appointment_id] : []);
+
+        if (data && appointmentIds.length > 0) {
             try {
-                await earningsService.updateEarningsForInvoice(data.id);
+                await earningsService.updateEarningsForMultipleAppointments(
+                    appointmentIds,
+                    invoice.items,
+                    data.id
+                );
             } catch (earningsError) {
                 console.error('Error updating earnings:', earningsError);
                 // Don't throw - invoice creation succeeded
@@ -43,6 +72,30 @@ export const invoicesService = {
         }
 
         return data;
+    },
+
+    /**
+     * Get all available/active promo codes
+     */
+    async getActivePromoCodes() {
+        const now = getLocalDateString();
+
+        const { data, error } = await supabase
+            .from('promo_codes')
+            .select('*')
+            .eq('is_active', true)
+            .lte('start_date', now)
+            .gte('end_date', now);
+
+        if (error) throw error;
+
+        // Filter out promo codes that have exceeded their usage limit
+        const validCodes = (data || []).filter(code => {
+            if (code.usage_limit === null || code.usage_limit === undefined) return true;
+            return code.used_count < code.usage_limit;
+        });
+
+        return validCodes;
     },
 
     /**

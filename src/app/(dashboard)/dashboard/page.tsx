@@ -7,6 +7,7 @@ import { reportsService } from '@/services/reports';
 import { availabilityService } from '@/services/availability';
 import { staffService } from '@/services/staff';
 import { useAuth } from '@/lib/auth';
+import { getLocalDateString } from '@/lib/utils';
 import {
     DollarSign,
     Calendar,
@@ -72,7 +73,7 @@ export default function DashboardPage() {
     const fetchDashboardData = async () => {
         try {
             setLoading(true);
-            const today = new Date().toISOString().split('T')[0];
+            const today = getLocalDateString();
 
             // Fetch basic stats
             const basicStats = await reportsService.getDashboardStats();

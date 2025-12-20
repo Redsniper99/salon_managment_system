@@ -11,8 +11,7 @@ import EditAppointmentModal from '@/components/appointments/EditAppointmentModal
 import ConfirmationDialog from '@/components/shared/ConfirmationDialog';
 import CalendarView from '@/components/appointments/CalendarView';
 import { AppointmentStatus } from '@/lib/types';
-import { formatTime, formatDate } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { formatTime, formatDate, cn, getLocalDateString } from '@/lib/utils';
 import { appointmentsService } from '@/services/appointments';
 
 const statusColors: Record<AppointmentStatus, string> = {
@@ -28,7 +27,7 @@ export default function AppointmentsPage() {
     const [view, setView] = useState<'list' | 'calendar'>('list');
     const [selectedStatus, setSelectedStatus] = useState<AppointmentStatus | 'All'>('All');
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedDate, setSelectedDate] = useState<string | 'all'>(new Date().toISOString().split('T')[0]);
+    const [selectedDate, setSelectedDate] = useState<string | 'all'>(getLocalDateString());
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
@@ -172,7 +171,7 @@ export default function AppointmentsPage() {
                                 onChange={(e) => setSelectedDate(e.target.value || 'all')}
                                 className="w-full lg:w-48"
                                 leftIcon={<Calendar className="h-5 w-5" />}
-                                min={new Date().toISOString().split('T')[0]}
+                                min={getLocalDateString()}
                             />
                             <Button
                                 variant={selectedDate === 'all' ? 'primary' : 'outline'}

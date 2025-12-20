@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Search, ShoppingCart, Plus, Tag, Trash2, Printer, RotateCcw } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Search, ShoppingCart, Plus, Tag, Trash2, Printer, RotateCcw, Calendar, Clock, User, CheckCircle, ChevronDown, ChevronUp, CreditCard, Banknote, X } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
 import ReceiptModal from '@/components/pos/ReceiptModal';
@@ -10,6 +10,8 @@ import { formatCurrency } from '@/lib/utils';
 import { servicesService } from '@/services/services';
 import { customersService } from '@/services/customers';
 import { invoicesService } from '@/services/invoices';
+import { appointmentsService } from '@/services/appointments';
+import { loyaltyService, CustomerLoyaltyInfo } from '@/services/loyalty';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/context/ToastContext';
@@ -25,17 +27,40 @@ export default function POSPage() {
     const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
     const [customerSearch, setCustomerSearch] = useState('');
     const [serviceSearch, setServiceSearch] = useState('');
-    const [loading, setLoading] = useState(false);
     const [processingPayment, setProcessingPayment] = useState(false);
     const [manualItem, setManualItem] = useState({ description: '', price: '' });
+
+    // Appointment integration state
+    const [customerAppointments, setCustomerAppointments] = useState<any[]>([]);
+    const [loadingAppointments, setLoadingAppointments] = useState(false);
+
+    // Coupon state
+    const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
+    const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
+    const [couponDropdownOpen, setCouponDropdownOpen] = useState(false);
+
+    // Payment method state
+    const [paymentMethod, setPaymentMethod] = useState('Cash');
 
     // Receipt Modal
     const [showReceipt, setShowReceipt] = useState(false);
     const [lastInvoice, setLastInvoice] = useState<any>(null);
 
-    // Fetch services on mount
+    // UI section toggles
+    const [showExtraServices, setShowExtraServices] = useState(false);
+    const [showManualFee, setShowManualFee] = useState(false);
+
+    // Loyalty state
+    const [loyaltyInfo, setLoyaltyInfo] = useState<CustomerLoyaltyInfo | null>(null);
+    const [loyaltyLoading, setLoyaltyLoading] = useState(false);
+    const [loyaltyDiscount, setLoyaltyDiscount] = useState(0);
+    const [loyaltyType, setLoyaltyType] = useState<'card' | 'points' | 'visit' | 'none'>('none');
+    const [pointsToRedeem, setPointsToRedeem] = useState(0);
+
+    // Fetch services and coupons on mount
     useEffect(() => {
         fetchServices();
+        fetchAvailableCoupons();
     }, []);
 
     // Search customers when query changes
@@ -47,6 +72,31 @@ export default function POSPage() {
         }
     }, [customerSearch]);
 
+    // Fetch customer appointments when customer is selected
+    useEffect(() => {
+        if (selectedCustomer) {
+            fetchCustomerAppointments(selectedCustomer.id);
+            fetchCustomerLoyalty(selectedCustomer.id);
+        } else {
+            setCustomerAppointments([]);
+            setLoyaltyInfo(null);
+            setLoyaltyDiscount(0);
+            setLoyaltyType('none');
+        }
+    }, [selectedCustomer]);
+
+    const fetchCustomerLoyalty = async (customerId: string) => {
+        setLoyaltyLoading(true);
+        try {
+            const info = await loyaltyService.getCustomerLoyaltyInfo(customerId);
+            setLoyaltyInfo(info);
+        } catch (error) {
+            console.error('Error fetching loyalty info:', error);
+        } finally {
+            setLoyaltyLoading(false);
+        }
+    };
+
     const fetchServices = async () => {
         try {
             const data = await servicesService.getServices();
@@ -54,6 +104,28 @@ export default function POSPage() {
         } catch (error) {
             console.error('Error fetching services:', error);
             showToast('Failed to load services', 'error');
+        }
+    };
+
+    const fetchAvailableCoupons = async () => {
+        try {
+            const data = await invoicesService.getActivePromoCodes();
+            setAvailableCoupons(data || []);
+        } catch (error) {
+            console.error('Error fetching coupons:', error);
+        }
+    };
+
+    const fetchCustomerAppointments = async (customerId: string) => {
+        setLoadingAppointments(true);
+        try {
+            const data = await appointmentsService.getCustomerTodayAppointments(customerId);
+            setCustomerAppointments(data || []);
+        } catch (error) {
+            console.error('Error fetching customer appointments:', error);
+            showToast('Failed to load appointments', 'error');
+        } finally {
+            setLoadingAppointments(false);
         }
     };
 
@@ -66,11 +138,50 @@ export default function POSPage() {
         }
     };
 
+    // Check if appointment is already in cart
+    const isAppointmentInCart = (appointmentId: string) => {
+        return cart.some(item => item.appointmentId === appointmentId);
+    };
+
+    // Add appointment directly to cart on click
+    const addAppointmentToCart = (appointment: any) => {
+        if (isAppointmentInCart(appointment.id)) {
+            showToast('This appointment is already in the bill', 'warning');
+            return;
+        }
+
+        if (!appointment.services_data || appointment.services_data.length === 0) {
+            showToast('No services found for this appointment', 'error');
+            return;
+        }
+
+        const newItems = appointment.services_data.map((service: any) => ({
+            type: 'appointment',
+            appointmentId: appointment.id,
+            serviceId: service.id,
+            name: service.name,
+            price: service.price,
+            quantity: 1,
+            stylistName: appointment.stylist?.name || 'Unknown',
+            startTime: appointment.start_time,
+            duration: appointment.duration
+        }));
+
+        setCart([...cart, ...newItems]);
+        showToast(`Added appointment (${appointment.start_time}) to bill`, 'success');
+    };
+
+    // Remove entire appointment from cart
+    const removeAppointmentFromCart = (appointmentId: string) => {
+        setCart(cart.filter(item => item.appointmentId !== appointmentId));
+        showToast('Appointment removed from bill', 'info');
+    };
+
     const addToCart = (service: any) => {
-        const existingItem = cart.find(item => item.serviceId === service.id);
+        const existingItem = cart.find(item => item.serviceId === service.id && !item.appointmentId);
         if (existingItem) {
             setCart(cart.map(item =>
-                item.serviceId === service.id
+                item.serviceId === service.id && !item.appointmentId
                     ? { ...item, quantity: item.quantity + 1 }
                     : item
             ));
@@ -99,6 +210,7 @@ export default function POSPage() {
             description: manualItem.description
         }]);
         setManualItem({ description: '', price: '' });
+        setShowManualFee(false);
         showToast('Manual item added', 'success');
     };
 
@@ -106,13 +218,42 @@ export default function POSPage() {
         setCart(cart.filter((_, i) => i !== index));
     };
 
+    const updateItemQuantity = (index: number, delta: number) => {
+        setCart(cart.map((item, i) => {
+            if (i === index) {
+                const newQty = item.quantity + delta;
+                return newQty > 0 ? { ...item, quantity: newQty } : item;
+            }
+            return item;
+        }).filter(item => item.quantity > 0));
+    };
+
     const clearCart = () => {
-        if (confirm('Are you sure you want to clear the cart?')) {
+        if (confirm('Are you sure you want to clear the bill?')) {
             setCart([]);
             setDiscount(0);
             setPromoCode('');
-            showToast('Cart cleared', 'info');
+            setSelectedCoupon(null);
+            showToast('Bill cleared', 'info');
         }
+    };
+
+    const handleSelectCoupon = async (coupon: any) => {
+        if (subtotal < (coupon.min_spend || 0)) {
+            showToast(`Minimum spend of ${formatCurrency(coupon.min_spend)} required for this coupon`, 'warning');
+            return;
+        }
+
+        setSelectedCoupon(coupon);
+        setPromoCode(coupon.code);
+
+        const discountAmount = coupon.type === 'percentage'
+            ? (subtotal * coupon.value) / 100
+            : coupon.value;
+
+        setDiscount(discountAmount);
+        setCouponDropdownOpen(false);
+        showToast(`Coupon ${coupon.code} applied!`, 'success');
     };
 
     const handleApplyPromo = async () => {
@@ -125,6 +266,12 @@ export default function POSPage() {
             showToast('Invalid promo code', 'error');
             setDiscount(0);
         }
+    };
+
+    const clearCoupon = () => {
+        setSelectedCoupon(null);
+        setPromoCode('');
+        setDiscount(0);
     };
 
     const handlePayment = async () => {
@@ -159,22 +306,80 @@ export default function POSPage() {
                 }
             }
 
+            // Get unique appointment IDs from cart
+            const appointmentIds = [...new Set(
+                cart
+                    .filter(item => item.appointmentId)
+                    .map(item => item.appointmentId)
+            )];
+
             const invoice = await invoicesService.createInvoice({
                 customer_id: selectedCustomer.id,
                 branch_id: branchId!,
-                items: cart,
+                appointment_ids: appointmentIds.length > 0 ? appointmentIds : undefined,
+                items: cart.map(item => ({
+                    type: item.type,
+                    serviceId: item.serviceId,
+                    appointmentId: item.appointmentId,
+                    name: item.name,
+                    description: item.name,
+                    price: item.price,
+                    quantity: item.quantity
+                })),
                 subtotal,
                 discount,
                 promo_code: promoCode || undefined,
                 tax,
                 total,
-                payment_method: 'Cash', // Default for now, can be dynamic
+                payment_method: paymentMethod,
                 created_by: user.id
             });
+
+            // Mark linked appointments as completed
+            if (appointmentIds.length > 0) {
+                try {
+                    await appointmentsService.markAppointmentsCompletedViaPOS(appointmentIds);
+                    showToast(`${appointmentIds.length} appointment(s) marked as completed`, 'success');
+                } catch (aptError) {
+                    console.error('Error marking appointments complete:', aptError);
+                }
+            }
 
             // If promo code was used, increment usage
             if (promoCode && discount > 0) {
                 await invoicesService.incrementPromoUsage(promoCode);
+            }
+
+            // Process loyalty transactions
+            if (selectedCustomer && loyaltyInfo) {
+                try {
+                    // Redeem points if used
+                    if (loyaltyType === 'points' && pointsToRedeem > 0) {
+                        await loyaltyService.redeemPoints(selectedCustomer.id, pointsToRedeem, invoice.id);
+                    }
+
+                    // Apply visit reward if used
+                    if (loyaltyType === 'visit' && loyaltyInfo.eligibleForVisitReward) {
+                        await loyaltyService.applyVisitReward(selectedCustomer.id, invoice.id);
+                    }
+
+                    // Record this visit
+                    const visitResult = await loyaltyService.recordVisit(selectedCustomer.id, invoice.id);
+                    if (visitResult.rewardEarned) {
+                        showToast(`🎉 Customer earned a visit reward! (Visit #${visitResult.visitNumber})`, 'success');
+                    }
+
+                    // Add points for this purchase (based on amount paid)
+                    if (loyaltyInfo.settings.option_points_enabled) {
+                        const earnedPoints = await loyaltyService.addPoints(selectedCustomer.id, total, invoice.id);
+                        if (earnedPoints > 0) {
+                            showToast(`Customer earned ${earnedPoints} loyalty points!`, 'success');
+                        }
+                    }
+                } catch (loyaltyError) {
+                    console.error('Error processing loyalty:', loyaltyError);
+                    // Don't fail payment for loyalty errors
+                }
             }
 
             // Record visit for customer
@@ -188,18 +393,24 @@ export default function POSPage() {
                 customer: selectedCustomer,
                 items: cart,
                 subtotal,
-                discount,
+                discount: totalDiscount,
                 tax,
                 total
             });
             setShowReceipt(true);
 
-            // Reset cart
+            // Reset cart and state
             setCart([]);
             setDiscount(0);
             setPromoCode('');
+            setSelectedCoupon(null);
             setSelectedCustomer(null);
             setCustomerSearch('');
+            setCustomerAppointments([]);
+            setLoyaltyInfo(null);
+            setLoyaltyDiscount(0);
+            setLoyaltyType('none');
+            setPointsToRedeem(0);
         } catch (error: any) {
             console.error('Error processing payment:', error);
             showToast('Payment failed: ' + error.message, 'error');
@@ -210,11 +421,43 @@ export default function POSPage() {
 
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const tax = subtotal * 0.05; // 5% tax
-    const total = subtotal - discount + tax;
+    const totalDiscount = discount + loyaltyDiscount; // Combined promo + loyalty discount
+    const total = Math.max(0, subtotal - totalDiscount + tax);
 
     const filteredServices = services.filter(s =>
         s.name.toLowerCase().includes(serviceSearch.toLowerCase())
     );
+
+    // Get appointments in cart
+    const appointmentsInCart = [...new Set(cart.filter(item => item.appointmentId).map(item => item.appointmentId))];
+
+    // Get appointments NOT in cart
+    const availableAppointments = customerAppointments.filter(apt => !isAppointmentInCart(apt.id));
+
+    // Group cart by appointment
+    const getGroupedCart = () => {
+        const appointmentGroups: { [key: string]: { appointment: any, items: any[] } } = {};
+        const extraItems: any[] = [];
+
+        cart.forEach((item, index) => {
+            if (item.appointmentId) {
+                if (!appointmentGroups[item.appointmentId]) {
+                    const apt = customerAppointments.find(a => a.id === item.appointmentId);
+                    appointmentGroups[item.appointmentId] = {
+                        appointment: apt || { id: item.appointmentId, start_time: item.startTime },
+                        items: []
+                    };
+                }
+                appointmentGroups[item.appointmentId].items.push({ ...item, index });
+            } else {
+                extraItems.push({ ...item, index });
+            }
+        });
+
+        return { appointmentGroups, extraItems };
+    };
+
+    const { appointmentGroups, extraItems } = getGroupedCart();
 
     return (
         <div className="space-y-6">
@@ -231,16 +474,16 @@ export default function POSPage() {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left: Services & Customer */}
-                <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                {/* Left: Customer & Selection */}
+                <div className="lg:col-span-2 space-y-4">
                     {/* Customer Search */}
-                    <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
-                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Customer</h2>
+                    <div className="card p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+                        <h2 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wide">Step 1: Select Customer</h2>
                         <div className="relative">
                             <Input
                                 type="text"
-                                placeholder="Search customer by phone or name..."
+                                placeholder="Search by phone or name..."
                                 value={customerSearch}
                                 onChange={(e) => setCustomerSearch(e.target.value)}
                                 leftIcon={<Search className="h-5 w-5" />}
@@ -258,98 +501,333 @@ export default function POSPage() {
                                             }}
                                         >
                                             <p className="font-medium text-gray-900 dark:text-white">{customer.name}</p>
-                                            <div className="flex justify-between items-center">
-                                                <p className="text-sm text-gray-500 dark:text-gray-400">{customer.phone}</p>
-                                                {customer.last_invoice && (
-                                                    <span className="text-xs font-medium text-success-600 dark:text-success-400 bg-success-50 dark:bg-success-900/20 px-2 py-0.5 rounded-full">
-                                                        Last Bill: {formatCurrency(customer.last_invoice.total)}
-                                                    </span>
-                                                )}
-                                            </div>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400">{customer.phone}</p>
                                         </button>
                                     ))}
                                 </div>
                             )}
                         </div>
                         {selectedCustomer && (
-                            <div className="mt-4 p-4 bg-primary-50 dark:bg-primary-900/20 rounded-xl flex justify-between items-center">
+                            <div className="mt-3 p-3 bg-primary-50 dark:bg-primary-900/20 rounded-xl flex justify-between items-center">
                                 <div>
                                     <p className="font-medium text-primary-900 dark:text-primary-100">{selectedCustomer.name}</p>
                                     <p className="text-sm text-primary-700 dark:text-primary-300">{selectedCustomer.phone}</p>
                                 </div>
-                                <Button variant="ghost" size="sm" onClick={() => {
-                                    setSelectedCustomer(null);
-                                    setCustomerSearch('');
-                                }}>Change</Button>
+                                <button
+                                    onClick={() => {
+                                        setSelectedCustomer(null);
+                                        setCustomerSearch('');
+                                        setCustomerAppointments([]);
+                                        setCart([]);
+                                    }}
+                                    className="text-primary-600 hover:text-primary-800 text-sm font-medium"
+                                >
+                                    Change
+                                </button>
                             </div>
                         )}
                     </div>
 
-                    {/* Services */}
-                    <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
-                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Services</h2>
-                        <Input
-                            type="text"
-                            placeholder="Search services..."
-                            value={serviceSearch}
-                            onChange={(e) => setServiceSearch(e.target.value)}
-                            leftIcon={<Search className="h-5 w-5" />}
-                        />
-                        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-96 overflow-y-auto">
-                            {filteredServices.map((service) => (
-                                <button
-                                    key={service.id}
-                                    onClick={() => addToCart(service)}
-                                    className="p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all duration-200 text-left"
-                                >
-                                    <p className="font-medium text-gray-900 dark:text-white">{service.name}</p>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{formatCurrency(service.price)}</p>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    {/* Today's Appointments */}
+                    {selectedCustomer && (
+                        <div className="card p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+                            <h2 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wide flex items-center gap-2">
+                                <Calendar className="h-4 w-4" />
+                                Step 2: Today's Appointments
+                            </h2>
 
-                    {/* Manual Fee */}
-                    <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
-                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Manual Fee</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <Input
-                                type="text"
-                                placeholder="Description"
-                                label="Description"
-                                value={manualItem.description}
-                                onChange={(e) => setManualItem({ ...manualItem, description: e.target.value })}
-                            />
-                            <Input
-                                type="number"
-                                placeholder="Amount"
-                                label="Amount (Rs)"
-                                value={manualItem.price}
-                                onChange={(e) => setManualItem({ ...manualItem, price: e.target.value })}
-                            />
+                            {loadingAppointments ? (
+                                <div className="flex items-center justify-center py-6">
+                                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent"></div>
+                                </div>
+                            ) : customerAppointments.length === 0 ? (
+                                <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
+                                    <Calendar className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                                    <p className="text-gray-500 dark:text-gray-400">No appointments for today</p>
+                                    <p className="text-xs text-gray-400 mt-1">Add services manually below</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {customerAppointments.map(appointment => {
+                                        const inCart = isAppointmentInCart(appointment.id);
+                                        const appointmentTotal = appointment.services_data?.reduce((sum: number, s: any) => sum + s.price, 0) || 0;
+
+                                        return (
+                                            <motion.div
+                                                key={appointment.id}
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className={`p-3 rounded-xl border-2 transition-all ${inCart
+                                                    ? 'border-success-500 bg-success-50 dark:bg-success-900/20'
+                                                    : 'border-gray-200 dark:border-gray-700 hover:border-primary-400 cursor-pointer'
+                                                    }`}
+                                                onClick={() => !inCart && addAppointmentToCart(appointment)}
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        {inCart ? (
+                                                            <CheckCircle className="h-5 w-5 text-success-600" />
+                                                        ) : (
+                                                            <div className="h-5 w-5 rounded-full border-2 border-gray-300 dark:border-gray-600" />
+                                                        )}
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <Clock className="h-3.5 w-3.5 text-gray-500" />
+                                                                <span className="font-medium text-gray-900 dark:text-white">{appointment.start_time}</span>
+                                                                <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">{appointment.duration}min</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 mt-0.5">
+                                                                <User className="h-3 w-3 text-gray-400" />
+                                                                <span className="text-xs text-gray-500">{appointment.stylist?.name || 'No stylist'}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="font-semibold text-gray-900 dark:text-white">{formatCurrency(appointmentTotal)}</p>
+                                                        <p className="text-xs text-gray-500">{appointment.services_data?.length || 0} service(s)</p>
+                                                    </div>
+                                                </div>
+                                                {!inCart && (
+                                                    <div className="mt-2 flex flex-wrap gap-1">
+                                                        {appointment.services_data?.map((s: any) => (
+                                                            <span key={s.id} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-300">
+                                                                {s.name}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </motion.div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="mt-4"
-                            leftIcon={<Plus className="h-4 w-4" />}
-                            onClick={addManualItem}
-                        >
-                            Add to Bill
-                        </Button>
-                    </div>
+                    )}
+
+                    {/* Loyalty Status Panel */}
+                    {selectedCustomer && loyaltyInfo && (loyaltyInfo.settings.option_card_enabled || loyaltyInfo.settings.option_points_enabled || loyaltyInfo.settings.option_visits_enabled) && (
+                        <div className="card p-4 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800">
+                            <h2 className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-3 uppercase tracking-wide flex items-center gap-2">
+                                🎁 Loyalty Status
+                            </h2>
+
+                            {loyaltyLoading ? (
+                                <div className="flex items-center justify-center py-4">
+                                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-amber-600 border-t-transparent"></div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {/* Card Status */}
+                                    {loyaltyInfo.settings.option_card_enabled && (
+                                        <div className="flex items-center justify-between p-2 bg-white/60 dark:bg-gray-800/60 rounded-lg">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-lg">🎫</span>
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900 dark:text-white">Card</p>
+                                                    {loyaltyInfo.cardValid ? (
+                                                        <p className="text-xs text-green-600">Valid • {loyaltyInfo.cardDiscount}% off</p>
+                                                    ) : (
+                                                        <p className="text-xs text-gray-500">No active card</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {loyaltyInfo.cardValid && (
+                                                <button
+                                                    onClick={() => {
+                                                        setLoyaltyType('card');
+                                                        setLoyaltyDiscount((subtotal * loyaltyInfo.cardDiscount) / 100);
+                                                        showToast(`Card discount ${loyaltyInfo.cardDiscount}% applied!`, 'success');
+                                                    }}
+                                                    disabled={loyaltyType === 'card'}
+                                                    className={`px-2 py-1 text-xs rounded-lg transition-colors ${loyaltyType === 'card' ? 'bg-green-500 text-white' : 'bg-amber-500 text-white hover:bg-amber-600'}`}
+                                                >
+                                                    {loyaltyType === 'card' ? '✓ Applied' : 'Apply'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Points Status */}
+                                    {loyaltyInfo.settings.option_points_enabled && (
+                                        <div className="flex items-center justify-between p-2 bg-white/60 dark:bg-gray-800/60 rounded-lg">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-lg">⭐</span>
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900 dark:text-white">Points</p>
+                                                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                                                        {loyaltyInfo.availablePoints} pts ({formatCurrency(loyaltyInfo.pointsValue)})
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {loyaltyInfo.availablePoints > 0 && (
+                                                <button
+                                                    onClick={() => {
+                                                        setLoyaltyType('points');
+                                                        setPointsToRedeem(loyaltyInfo.availablePoints);
+                                                        const discountAmt = Math.min(loyaltyInfo.pointsValue, subtotal);
+                                                        setLoyaltyDiscount(discountAmt);
+                                                        showToast(`Redeeming ${loyaltyInfo.availablePoints} points for ${formatCurrency(discountAmt)}`, 'success');
+                                                    }}
+                                                    disabled={loyaltyType === 'points'}
+                                                    className={`px-2 py-1 text-xs rounded-lg transition-colors ${loyaltyType === 'points' ? 'bg-green-500 text-white' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+                                                >
+                                                    {loyaltyType === 'points' ? '✓ Applied' : 'Redeem'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Visit Progress */}
+                                    {loyaltyInfo.settings.option_visits_enabled && (
+                                        <div className="flex items-center justify-between p-2 bg-white/60 dark:bg-gray-800/60 rounded-lg">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-lg">🎯</span>
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900 dark:text-white">Visits</p>
+                                                    {loyaltyInfo.eligibleForVisitReward ? (
+                                                        <p className="text-xs text-green-600">🎉 {loyaltyInfo.visitRewardDiscount}% off this visit!</p>
+                                                    ) : (
+                                                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                                                            {loyaltyInfo.totalVisits} visits • {loyaltyInfo.nextRewardVisit} more for reward
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {loyaltyInfo.eligibleForVisitReward && (
+                                                <button
+                                                    onClick={() => {
+                                                        setLoyaltyType('visit');
+                                                        setLoyaltyDiscount((subtotal * loyaltyInfo.visitRewardDiscount) / 100);
+                                                        showToast(`Visit reward ${loyaltyInfo.visitRewardDiscount}% applied!`, 'success');
+                                                    }}
+                                                    disabled={loyaltyType === 'visit'}
+                                                    className={`px-2 py-1 text-xs rounded-lg transition-colors ${loyaltyType === 'visit' ? 'bg-green-500 text-white' : 'bg-green-500 text-white hover:bg-green-600'}`}
+                                                >
+                                                    {loyaltyType === 'visit' ? '✓ Applied' : 'Apply'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Clear loyalty discount */}
+                                    {loyaltyType !== 'none' && (
+                                        <button
+                                            onClick={() => {
+                                                setLoyaltyType('none');
+                                                setLoyaltyDiscount(0);
+                                                setPointsToRedeem(0);
+                                                showToast('Loyalty discount removed', 'info');
+                                            }}
+                                            className="w-full mt-2 text-xs text-gray-500 hover:text-gray-700 underline"
+                                        >
+                                            Clear loyalty discount
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Extra Services (Collapsible) */}
+                    {selectedCustomer && (
+                        <div className="card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
+                            <button
+                                onClick={() => setShowExtraServices(!showExtraServices)}
+                                className="w-full p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                            >
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                                    ➕ Add Extra Services
+                                </span>
+                                {showExtraServices ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </button>
+                            <AnimatePresence>
+                                {showExtraServices && (
+                                    <motion.div
+                                        initial={{ height: 0 }}
+                                        animate={{ height: 'auto' }}
+                                        exit={{ height: 0 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <div className="p-4 pt-0 border-t border-gray-100 dark:border-gray-700">
+                                            <Input
+                                                type="text"
+                                                placeholder="Search services..."
+                                                value={serviceSearch}
+                                                onChange={(e) => setServiceSearch(e.target.value)}
+                                                leftIcon={<Search className="h-4 w-4" />}
+                                            />
+                                            <div className="mt-3 grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                                                {filteredServices.slice(0, 20).map(service => (
+                                                    <button
+                                                        key={service.id}
+                                                        onClick={() => addToCart(service)}
+                                                        className="p-2 text-left border border-gray-200 dark:border-gray-700 rounded-lg hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all text-sm"
+                                                    >
+                                                        <p className="font-medium text-gray-900 dark:text-white truncate">{service.name}</p>
+                                                        <p className="text-xs text-gray-500">{formatCurrency(service.price)}</p>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    )}
+
+                    {/* Manual Fee (Collapsible) */}
+                    {selectedCustomer && (
+                        <div className="card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
+                            <button
+                                onClick={() => setShowManualFee(!showManualFee)}
+                                className="w-full p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                            >
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                                    💵 Add Manual Fee
+                                </span>
+                                {showManualFee ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </button>
+                            <AnimatePresence>
+                                {showManualFee && (
+                                    <motion.div
+                                        initial={{ height: 0 }}
+                                        animate={{ height: 'auto' }}
+                                        exit={{ height: 0 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <div className="p-4 pt-0 border-t border-gray-100 dark:border-gray-700 space-y-3">
+                                            <Input
+                                                placeholder="Description"
+                                                value={manualItem.description}
+                                                onChange={(e) => setManualItem({ ...manualItem, description: e.target.value })}
+                                            />
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    type="number"
+                                                    placeholder="Amount"
+                                                    value={manualItem.price}
+                                                    onChange={(e) => setManualItem({ ...manualItem, price: e.target.value })}
+                                                />
+                                                <Button variant="primary" size="sm" onClick={addManualItem}>
+                                                    Add
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right: Bill Summary */}
-                <div className="lg:col-span-1">
-                    <div className="card p-6 sticky top-24 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
-                        <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-xl">
-                                    <ShoppingCart className="h-5 w-5 text-primary-600 dark:text-primary-400" />
-                                </div>
-                                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Bill Summary</h2>
-                            </div>
+                <div className="lg:col-span-3">
+                    <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 sticky top-24">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                                <ShoppingCart className="h-5 w-5 text-primary-600" />
+                                Bill Summary
+                            </h2>
                             {cart.length > 0 && (
                                 <button
                                     onClick={clearCart}
@@ -360,102 +838,205 @@ export default function POSPage() {
                             )}
                         </div>
 
-                        {/* Cart Items */}
-                        <div className="space-y-3 mb-6 max-h-48 overflow-y-auto">
+                        {/* Bill Items */}
+                        <div className="space-y-4 mb-6 max-h-[40vh] overflow-y-auto">
                             {cart.length === 0 ? (
-                                <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No items in cart</p>
+                                <div className="text-center py-12 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
+                                    <ShoppingCart className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                                    <p className="text-gray-500 dark:text-gray-400">No items in bill</p>
+                                    <p className="text-xs text-gray-400 mt-1">Select a customer and add appointments</p>
+                                </div>
                             ) : (
-                                cart.map((item, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-                                        <div>
-                                            <p className="text-sm font-medium text-gray-900 dark:text-white">{item.name}</p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">Qty: {item.quantity}</p>
+                                <>
+                                    {/* Appointment Groups */}
+                                    {Object.entries(appointmentGroups).map(([aptId, group]) => (
+                                        <div key={aptId} className="bg-gradient-to-r from-primary-50 to-transparent dark:from-primary-900/20 rounded-xl p-4 border border-primary-200 dark:border-primary-800">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <Calendar className="h-4 w-4 text-primary-600" />
+                                                    <span className="text-sm font-medium text-primary-800 dark:text-primary-200">
+                                                        Appointment at {group.appointment.start_time}
+                                                    </span>
+                                                    <span className="text-xs bg-primary-200 dark:bg-primary-800 px-2 py-0.5 rounded text-primary-700 dark:text-primary-300">
+                                                        {group.items[0]?.stylistName}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    onClick={() => removeAppointmentFromCart(aptId)}
+                                                    className="text-primary-600 hover:text-danger-600 transition-colors"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {group.items.map((item: any) => (
+                                                    <div key={item.index} className="flex justify-between items-center text-sm">
+                                                        <span className="text-gray-700 dark:text-gray-300">{item.name}</span>
+                                                        <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(item.price)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="mt-2 pt-2 border-t border-primary-200 dark:border-primary-700 flex justify-between font-medium">
+                                                <span className="text-primary-800 dark:text-primary-200">Subtotal</span>
+                                                <span className="text-primary-900 dark:text-primary-100">
+                                                    {formatCurrency(group.items.reduce((s: number, i: any) => s + i.price * i.quantity, 0))}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                                                {formatCurrency(item.price * item.quantity)}
-                                            </p>
-                                            <button
-                                                onClick={() => removeFromCart(index)}
-                                                className="text-gray-400 hover:text-danger-500 transition-colors"
-                                            >
-                                                &times;
-                                            </button>
+                                    ))}
+
+                                    {/* Extra Items */}
+                                    {extraItems.length > 0 && (
+                                        <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4">
+                                            <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
+                                                Extra Services
+                                            </div>
+                                            <div className="space-y-2">
+                                                {extraItems.map((item: any) => (
+                                                    <div key={item.index} className="flex justify-between items-center">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-gray-900 dark:text-white">{item.name}</span>
+                                                            <div className="flex items-center gap-1 text-xs">
+                                                                <button
+                                                                    onClick={() => updateItemQuantity(item.index, -1)}
+                                                                    className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-600 hover:bg-gray-300"
+                                                                >-</button>
+                                                                <span className="w-6 text-center">{item.quantity}</span>
+                                                                <button
+                                                                    onClick={() => updateItemQuantity(item.index, 1)}
+                                                                    className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-600 hover:bg-gray-300"
+                                                                >+</button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-medium">{formatCurrency(item.price * item.quantity)}</span>
+                                                            <button onClick={() => removeFromCart(item.index)} className="text-gray-400 hover:text-danger-500">
+                                                                <X className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))
+                                    )}
+                                </>
                             )}
                         </div>
 
-                        {/* Promo Code */}
-                        <div className="mb-6">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Promo Code</label>
-                            <div className="flex gap-2">
-                                <Input
-                                    type="text"
-                                    placeholder="Enter code"
-                                    value={promoCode}
-                                    onChange={(e) => setPromoCode(e.target.value)}
-                                    leftIcon={<Tag className="h-4 w-4" />}
-                                />
-                                <Button variant="outline" size="md" onClick={handleApplyPromo}>Apply</Button>
+                        {/* Discount Section */}
+                        {cart.length > 0 && (
+                            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
+                                <label className="text-xs font-medium text-gray-500 mb-2 block">Coupon / Discount</label>
+                                {selectedCoupon ? (
+                                    <div className="flex items-center justify-between bg-success-50 dark:bg-success-900/20 p-2 rounded-lg">
+                                        <span className="text-success-700 dark:text-success-300 font-medium">{selectedCoupon.code}</span>
+                                        <button onClick={clearCoupon} className="text-success-600 hover:text-success-800">
+                                            <X className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setCouponDropdownOpen(!couponDropdownOpen)}
+                                            className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+                                        >
+                                            <span className="text-gray-500">{availableCoupons.length > 0 ? 'Select coupon...' : 'No coupons'}</span>
+                                            <ChevronDown className="h-4 w-4" />
+                                        </button>
+                                        {couponDropdownOpen && availableCoupons.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                                                {availableCoupons.map(coupon => (
+                                                    <button
+                                                        key={coupon.id}
+                                                        onClick={() => handleSelectCoupon(coupon)}
+                                                        className="w-full p-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
+                                                    >
+                                                        <div className="flex justify-between">
+                                                            <span className="font-medium">{coupon.code}</span>
+                                                            <span className="text-primary-600">
+                                                                {coupon.type === 'percentage' ? `${coupon.value}%` : formatCurrency(coupon.value)}
+                                                            </span>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
-                        </div>
+                        )}
 
                         {/* Totals */}
-                        <div className="space-y-2 mb-6 pb-6 border-b border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-                                <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(subtotal)}</span>
-                            </div>
-                            {discount > 0 && (
-                                <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-600 dark:text-gray-400">Discount</span>
-                                    <span className="font-medium text-success-600 dark:text-success-400">-{formatCurrency(discount)}</span>
+                        {cart.length > 0 && (
+                            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
+                                    <span className="text-gray-900 dark:text-white">{formatCurrency(subtotal)}</span>
                                 </div>
-                            )}
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600 dark:text-gray-400">Tax (5%)</span>
-                                <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(tax)}</span>
+                                {discount > 0 && (
+                                    <div className="flex justify-between text-sm text-success-600">
+                                        <span>Coupon {promoCode && `(${promoCode})`}</span>
+                                        <span>-{formatCurrency(discount)}</span>
+                                    </div>
+                                )}
+                                {loyaltyDiscount > 0 && (
+                                    <div className="flex justify-between text-sm text-amber-600">
+                                        <span>Loyalty {loyaltyType === 'card' && '(Card)'}{loyaltyType === 'points' && '(Points)'}{loyaltyType === 'visit' && '(Visit Reward)'}</span>
+                                        <span>-{formatCurrency(loyaltyDiscount)}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600 dark:text-gray-400">Tax (5%)</span>
+                                    <span className="text-gray-900 dark:text-white">{formatCurrency(tax)}</span>
+                                </div>
+                                <div className="flex justify-between text-xl font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
+                                    <span className="text-gray-900 dark:text-white">Total</span>
+                                    <span className="text-primary-600">{formatCurrency(total)}</span>
+                                </div>
                             </div>
-                        </div>
+                        )}
 
-                        <div className="flex items-center justify-between mb-6">
-                            <span className="text-lg font-semibold text-gray-900 dark:text-white">Total</span>
-                            <span className="text-2xl font-bold text-primary-600 dark:text-primary-400">{formatCurrency(total)}</span>
-                        </div>
+                        {/* Payment Method & Button */}
+                        {cart.length > 0 && (
+                            <div className="mt-6 space-y-4">
+                                <div>
+                                    <label className="text-xs font-medium text-gray-500 mb-2 block">Payment Method</label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {['Cash', 'Card', 'UPI', 'BankTransfer'].map(method => (
+                                            <button
+                                                key={method}
+                                                onClick={() => setPaymentMethod(method)}
+                                                className={`p-2 rounded-lg text-xs font-medium transition-all ${paymentMethod === method
+                                                    ? 'bg-primary-600 text-white'
+                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                                    }`}
+                                            >
+                                                {method === 'Cash' && <Banknote className="h-4 w-4 mx-auto mb-1" />}
+                                                {method === 'Card' && <CreditCard className="h-4 w-4 mx-auto mb-1" />}
+                                                {method}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
-                        {/* Payment Method */}
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Payment Method</label>
-                            <select className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500">
-                                <option>Cash</option>
-                                <option>Card</option>
-                                <option>UPI</option>
-                                <option>Bank Transfer</option>
-                            </select>
-                        </div>
-
-                        <Button
-                            variant="primary"
-                            size="lg"
-                            className="w-full"
-                            onClick={handlePayment}
-                            disabled={processingPayment || cart.length === 0 || !selectedCustomer}
-                        >
-                            {processingPayment ? 'Processing...' : 'Complete Payment'}
-                        </Button>
-
-                        {/* Recent Invoices Section */}
-                        <div className="pt-4 border-t border-gray-200 dark:border-gray-700 mt-4">
-                            <RecentInvoices />
-                        </div>
+                                <Button
+                                    variant="primary"
+                                    size="lg"
+                                    className="w-full py-4 text-lg"
+                                    onClick={handlePayment}
+                                    isLoading={processingPayment}
+                                    disabled={!selectedCustomer || cart.length === 0}
+                                >
+                                    Complete Payment • {formatCurrency(total)}
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
 
             {/* Receipt Modal */}
-            {showReceipt && lastInvoice && (
+            {lastInvoice && (
                 <ReceiptModal
                     isOpen={showReceipt}
                     onClose={() => setShowReceipt(false)}
@@ -463,93 +1044,5 @@ export default function POSPage() {
                 />
             )}
         </div>
-    );
-}
-
-function RecentInvoices() {
-    const [invoices, setInvoices] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
-
-    useEffect(() => {
-        loadRecentInvoices();
-
-        // Subscribe to new invoices
-        const subscription = supabase
-            .channel('recent_invoices')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'invoices' }, () => {
-                loadRecentInvoices();
-            })
-            .subscribe();
-
-        return () => {
-            subscription.unsubscribe();
-        };
-    }, []);
-
-    const loadRecentInvoices = async () => {
-        try {
-            const data = await invoicesService.getInvoices({ limit: 5 });
-            setInvoices(data || []);
-        } catch (error) {
-            console.error('Error loading recent invoices:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col w-full">
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700/50">
-                    <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                        <RotateCcw className="w-4 h-4" />
-                        Recent Transactions
-                    </h3>
-                    <span className="text-xs text-gray-500 bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded-full">Last 5</span>
-                </div>
-
-                <div className="overflow-y-auto flex-1 p-3 space-y-2 max-h-[300px]">
-                    {loading ? (
-                        <div className="text-center py-8 text-sm text-gray-500">Loading...</div>
-                    ) : invoices.length === 0 ? (
-                        <div className="text-center py-8 text-sm text-gray-500">No recent invoices</div>
-                    ) : (
-                        invoices.map((invoice) => (
-                            <div
-                                key={invoice.id}
-                                onClick={() => setSelectedInvoice(invoice)}
-                                className="p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors group"
-                            >
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className="font-medium text-gray-900 dark:text-white text-sm">
-                                        #{invoice.id.slice(0, 8)}
-                                    </span>
-                                    <span className="font-bold text-primary-600 dark:text-primary-400 text-sm">
-                                        {formatCurrency(invoice.total)}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
-                                    <span className="truncate max-w-[120px]">
-                                        {invoice.customer?.name || 'Walk-in Customer'}
-                                    </span>
-                                    <span>
-                                        {new Date(invoice.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
-
-            {selectedInvoice && (
-                <ReceiptModal
-                    isOpen={!!selectedInvoice}
-                    onClose={() => setSelectedInvoice(null)}
-                    invoice={selectedInvoice}
-                />
-            )}
-        </>
     );
 }

@@ -1,11 +1,12 @@
 import { supabase } from '@/lib/supabase';
+import { getLocalDateString } from '@/lib/utils';
 
 export const reportsService = {
     /**
      * Get basic dashboard stats for today
      */
     async getDashboardStats() {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
 
         // Get today's revenue
         const { data: invoices, error: invoiceError } = await supabase

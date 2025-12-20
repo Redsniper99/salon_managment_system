@@ -6,6 +6,7 @@ import { X, Calendar, Clock, User, Scissors, CheckCircle, Users, UserCheck } fro
 import Modal from '@/components/shared/Modal';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
+import PhoneInput from '@/components/shared/PhoneInput';
 import { appointmentsService } from '@/services/appointments';
 import { customersService } from '@/services/customers';
 import { servicesService } from '@/services/services';
@@ -212,12 +213,10 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                         />
 
                         {/* Customer Phone */}
-                        <Input
+                        <PhoneInput
                             label="Phone Number"
-                            type="tel"
                             value={formData.customerPhone}
-                            onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
-                            placeholder="e.g. +94 77 123 4567"
+                            onChange={(value) => setFormData({ ...formData, customerPhone: value })}
                             required
                         />
                     </div>

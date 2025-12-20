@@ -55,18 +55,23 @@ export const notificationsService = {
                 .single();
 
             if (error) {
+                // PGRST116 = no rows returned (template not found)
+                if (error.code === 'PGRST116') {
+                    console.warn(`No active template found for type: ${type}`);
+                    return null;
+                }
                 console.error('Supabase error fetching template:', {
                     message: error.message,
                     details: error.details,
                     hint: error.hint,
                     code: error.code
                 });
-                throw new Error(`Failed to fetch template: ${error.message}`);
+                return null; // Return null instead of throwing
             }
             return data as NotificationTemplate;
         } catch (error: any) {
             console.error('Error fetching template:', error.message || error);
-            throw error;
+            return null; // Return null instead of throwing
         }
     },
 
@@ -262,7 +267,12 @@ export const notificationsService = {
             // Get template
             const template = await this.getTemplateByType(templateType);
             if (!template) {
-                throw new Error('Template not found');
+                console.warn(`Template not found for type: ${templateType}. Skipping notification.`);
+                return {
+                    success: false,
+                    message: `Template not found: ${templateType}`,
+                    results: { email: null, sms: null, whatsapp: null }
+                };
             }
 
             // Replace variables
