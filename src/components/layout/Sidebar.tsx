@@ -22,6 +22,7 @@ import {
     Target,
     Megaphone,
     Gift,
+    Share2,
     LucideIcon,
     ChevronLeft,
     ChevronRight,
@@ -107,6 +108,12 @@ const navItems: NavItem[] = [
         href: '/campaigns',
         icon: Megaphone,
         allowedRoles: ['Owner', 'Manager'],
+    },
+    {
+        label: 'Social Media',
+        href: '/social-media',
+        icon: Share2,
+        allowedRoles: ['Owner'],
     },
     {
         label: 'Reports',
