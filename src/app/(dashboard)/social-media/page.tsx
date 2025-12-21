@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Share2, Facebook, Instagram, Upload, Plus, X, Clock, Calendar,
     Image as ImageIcon, Loader, Save, Settings, Tag, MessageSquare,
-    Trash2, Edit, Check, RefreshCw, AlertCircle
+    Trash2, Edit, Check, RefreshCw, AlertCircle, Activity
 } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
@@ -36,6 +36,7 @@ export default function SocialMediaPage() {
     // Loading states
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [runningAutomation, setRunningAutomation] = useState(false);
 
     // Data states
     const [settings, setSettings] = useState<SocialMediaSettings | null>(null);
@@ -49,6 +50,8 @@ export default function SocialMediaPage() {
     const [selectedDays, setSelectedDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']);
     const [logoPosition, setLogoPosition] = useState<string>('bottom-right');
     const [logoSize, setLogoSize] = useState(80);
+    const [facebookEnabled, setFacebookEnabled] = useState(true);
+    const [instagramEnabled, setInstagramEnabled] = useState(false);
 
     // Modal states
     const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -95,6 +98,8 @@ export default function SocialMediaPage() {
             if (settingsData) {
                 setLogoPosition(settingsData.logo_position);
                 setLogoSize(settingsData.logo_size);
+                setFacebookEnabled(settingsData.facebook_enabled ?? true);
+                setInstagramEnabled(settingsData.instagram_enabled ?? false);
             }
         } catch (error) {
             console.error('Error fetching data:', error);
@@ -104,9 +109,76 @@ export default function SocialMediaPage() {
         }
     }, [showToast]);
 
+    // Automation Heartbeat
+    useEffect(() => {
+        // Run automation in background occasionally while user is on the page
+        const heartbeat = setInterval(async () => {
+            try {
+                await fetch('/api/social-media/automation');
+                fetchData(); // Refresh history/queue if something posted
+            } catch (e) {
+                console.error('Heartbeat automation failed:', e);
+            }
+        }, 15 * 60 * 1000); // Every 15 minutes
+
+        return () => clearInterval(heartbeat);
+    }, [fetchData]);
+
     useEffect(() => {
         fetchData();
-    }, [fetchData]);
+
+        // Handle success/error from OAuth redirect
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('success') === 'connected') {
+            showToast('Successfully connected to Facebook!', 'success');
+            // Clean up URL
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+        if (params.get('error')) {
+            showToast(`Connection failed: ${params.get('error')}`, 'error');
+            // Clean up URL
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, [fetchData, showToast]);
+
+    // Handle Meta Connect
+    const handleConnect = () => {
+        window.location.href = '/api/social-media?action=connect';
+    };
+
+    const handleDisconnect = async () => {
+        if (!confirm('Are you sure you want to disconnect your social media accounts? This will stop all automated posting.')) return;
+        try {
+            await socialMediaService.disconnect();
+            fetchData();
+            showToast('Disconnected successfully', 'success');
+        } catch (error) {
+            showToast('Failed to disconnect', 'error');
+        }
+    };
+
+    // Handle Automation Run
+    const handleRunAutomation = async () => {
+        setRunningAutomation(true);
+        try {
+            const response = await fetch('/api/social-media/automation');
+            const data = await response.json();
+
+            if (data.results && data.results.length > 0) {
+                showToast(`Successfully processed ${data.results.length} stories!`, 'success');
+                fetchData(); // Refresh history and queue
+            } else if (data.message) {
+                showToast(data.message, 'info');
+            } else if (data.error) {
+                showToast(data.error, 'error');
+            }
+        } catch (error) {
+            console.error('Automation error:', error);
+            showToast('Failed to run automation', 'error');
+        } finally {
+            setRunningAutomation(false);
+        }
+    };
 
     // Save schedule settings
     const handleSaveSchedule = async () => {
@@ -118,7 +190,9 @@ export default function SocialMediaPage() {
             });
             await socialMediaService.updateSettings({
                 logo_position: logoPosition as any,
-                logo_size: logoSize
+                logo_size: logoSize,
+                facebook_enabled: facebookEnabled,
+                instagram_enabled: instagramEnabled
             });
             showToast('Settings saved successfully', 'success');
         } catch (error) {
@@ -147,7 +221,7 @@ export default function SocialMediaPage() {
     // Image upload
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (!files) return;
+        if (!files || files.length === 0) return;
 
         const currentCount = queuedImages.length;
         const availableSlots = 9 - currentCount;
@@ -157,34 +231,55 @@ export default function SocialMediaPage() {
             return;
         }
 
+        setLoading(true);
+        let successCount = 0;
+        let failCount = 0;
+
         for (const file of Array.from(files).slice(0, availableSlots)) {
             try {
                 const url = await socialMediaService.uploadStoryImage(file);
                 await socialMediaService.addStoryImage({ image_url: url });
+                successCount++;
             } catch (error) {
                 console.error('Error uploading image:', error);
+                failCount++;
             }
         }
 
-        fetchData();
-        showToast('Images uploaded successfully', 'success');
+        await fetchData();
+
+        if (successCount > 0 && failCount === 0) {
+            showToast(`Successfully uploaded ${successCount} image(s)`, 'success');
+        } else if (successCount > 0 && failCount > 0) {
+            showToast(`Uploaded ${successCount} image(s), but ${failCount} failed`, 'warning');
+        } else if (failCount > 0) {
+            showToast('All image uploads failed', 'error');
+        }
+
+        setLoading(false);
     };
 
     // Template CRUD
     const handleSaveTemplate = async () => {
         try {
+            const dataToSave = {
+                ...templateForm,
+                hashtags: templateForm.hashtags.trim() || null
+            };
+
             if (editingTemplate) {
-                await socialMediaService.updateCaptionTemplate(editingTemplate.id, templateForm);
+                await socialMediaService.updateCaptionTemplate(editingTemplate.id, dataToSave);
             } else {
-                await socialMediaService.createCaptionTemplate(templateForm);
+                await socialMediaService.createCaptionTemplate(dataToSave);
             }
             setShowTemplateModal(false);
             setTemplateForm({ name: '', caption: '', hashtags: '' });
             setEditingTemplate(null);
             fetchData();
-            showToast('Template saved', 'success');
-        } catch (error) {
-            showToast('Failed to save template', 'error');
+            showToast('Template saved successfully', 'success');
+        } catch (error: any) {
+            console.error('Error saving template:', error);
+            showToast(error.message || 'Failed to save template', 'error');
         }
     };
 
@@ -202,18 +297,25 @@ export default function SocialMediaPage() {
     // Slot CRUD
     const handleSaveSlot = async () => {
         try {
+            const dataToSave = {
+                ...slotForm,
+                caption_template_id: slotForm.caption_template_id || null,
+                custom_caption: slotForm.custom_caption?.trim() || null
+            };
+
             if (editingSlot) {
-                await socialMediaService.updatePostingSlot(editingSlot.id, slotForm);
+                await socialMediaService.updatePostingSlot(editingSlot.id, dataToSave);
             } else {
-                await socialMediaService.createPostingSlot(slotForm);
+                await socialMediaService.createPostingSlot(dataToSave);
             }
             setShowSlotModal(false);
             setSlotForm({ posting_time: '09:00', caption_template_id: '', custom_caption: '' });
             setEditingSlot(null);
             fetchData();
-            showToast('Slot saved', 'success');
-        } catch (error) {
-            showToast('Failed to save slot', 'error');
+            showToast('Posting slot saved', 'success');
+        } catch (error: any) {
+            console.error('Error saving slot:', error);
+            showToast(error.message || 'Failed to save slot', 'error');
         }
     };
 
@@ -287,11 +389,33 @@ export default function SocialMediaPage() {
                         <Share2 className="h-8 w-8 text-primary-600" />
                         Social Media Stories
                     </h1>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">
-                        Automate posting to Facebook & Instagram Stories
-                    </p>
+                    <div className="flex items-center gap-4 mt-1">
+                        <p className="text-gray-600 dark:text-gray-400">
+                            Automate posting to Facebook & Instagram Stories
+                        </p>
+                        {settings?.last_automation_run && (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-xs font-medium border border-green-100 dark:border-green-800">
+                                <Activity className="h-3 w-3" />
+                                Automation Active (Last run: {new Date(settings.last_automation_run).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                            </div>
+                        )}
+                        {!settings?.last_automation_run && (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-full text-xs font-medium border border-amber-100 dark:border-amber-800">
+                                <Clock className="h-3 w-3" />
+                                Automation Pending
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={handleRunAutomation}
+                        disabled={runningAutomation || loading}
+                        leftIcon={runningAutomation ? <Loader className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    >
+                        {runningAutomation ? 'Running...' : 'Run Automation'}
+                    </Button>
                     <Button variant="outline" onClick={fetchData} leftIcon={<RefreshCw className="h-4 w-4" />}>
                         Refresh
                     </Button>
@@ -301,44 +425,82 @@ export default function SocialMediaPage() {
                 </div>
             </div>
 
-            {/* Connection Status */}
+            {/* Connection Status & Platform Settings */}
             <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                    <Settings className="h-5 w-5" /> Connection Status
+                    <Settings className="h-5 w-5" /> Platform Settings
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-                        <div className="flex items-center gap-3">
-                            <Facebook className="h-6 w-6 text-blue-600" />
-                            <div>
-                                <p className="font-medium text-gray-900 dark:text-white">Facebook</p>
-                                <p className="text-sm text-gray-500">
-                                    {settings?.is_connected ? '✅ Connected' : '❌ Not connected'}
-                                </p>
+                    {/* Facebook */}
+                    <div className={`p-4 rounded-xl border-2 transition-colors ${facebookEnabled ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                                <Facebook className={`h-6 w-6 ${facebookEnabled ? 'text-blue-600' : 'text-gray-400'}`} />
+                                <div>
+                                    <p className="font-medium text-gray-900 dark:text-white">Facebook Stories</p>
+                                    <p className="text-sm text-gray-500">
+                                        {settings?.is_connected ? '✅ Connected' : '❌ Not connected'}
+                                    </p>
+                                </div>
+                            </div>
+                            {/* Toggle Switch */}
+                            <button
+                                onClick={() => setFacebookEnabled(!facebookEnabled)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${facebookEnabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${facebookEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span className={`text-xs font-medium ${facebookEnabled ? 'text-blue-600' : 'text-gray-500'}`}>
+                                {facebookEnabled ? '✓ Enabled' : 'Disabled'}
+                            </span>
+                            <div className="flex gap-2">
+                                {settings?.is_connected && (
+                                    <Button variant="outline" size="sm" onClick={handleDisconnect} className="text-red-600 hover:text-red-700">
+                                        Disconnect
+                                    </Button>
+                                )}
+                                <Button variant="outline" size="sm" onClick={handleConnect}>
+                                    {settings?.is_connected ? 'Reconnect' : 'Connect'}
+                                </Button>
                             </div>
                         </div>
-                        <Button variant="outline" size="sm">
-                            {settings?.is_connected ? 'Reconnect' : 'Connect'}
-                        </Button>
                     </div>
-                    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-                        <div className="flex items-center gap-3">
-                            <Instagram className="h-6 w-6 text-pink-600" />
-                            <div>
-                                <p className="font-medium text-gray-900 dark:text-white">Instagram</p>
-                                <p className="text-sm text-gray-500">
-                                    {settings?.instagram_account_id ? '✅ Connected' : '❌ Not connected'}
-                                </p>
+
+                    {/* Instagram */}
+                    <div className={`p-4 rounded-xl border-2 transition-colors ${instagramEnabled ? 'bg-pink-50 dark:bg-pink-900/20 border-pink-200 dark:border-pink-800' : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                                <Instagram className={`h-6 w-6 ${instagramEnabled ? 'text-pink-600' : 'text-gray-400'}`} />
+                                <div>
+                                    <p className="font-medium text-gray-900 dark:text-white">Instagram Stories</p>
+                                    <p className="text-sm text-gray-500">
+                                        {settings?.instagram_account_id ? '✅ Connected' : '❌ Not connected'}
+                                    </p>
+                                </div>
                             </div>
+                            {/* Toggle Switch */}
+                            <button
+                                onClick={() => setInstagramEnabled(!instagramEnabled)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${instagramEnabled ? 'bg-pink-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${instagramEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
                         </div>
-                        <Button variant="outline" size="sm" disabled={!settings?.is_connected}>
-                            Connect
-                        </Button>
+                        <div className="flex items-center justify-between">
+                            <span className={`text-xs font-medium ${instagramEnabled ? 'text-pink-600' : 'text-gray-500'}`}>
+                                {instagramEnabled ? '✓ Enabled' : 'Disabled (Coming soon)'}
+                            </span>
+                            <Button variant="outline" size="sm" onClick={handleConnect} disabled={!settings?.is_connected}>
+                                {settings?.instagram_account_id ? 'Reconnect' : 'Connect'}
+                            </Button>
+                        </div>
                     </div>
                 </div>
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-3 flex items-center gap-1">
                     <AlertCircle className="h-3 w-3" />
-                    Meta API requires a Facebook Business Page linked to an Instagram Business account.
+                    Toggle platforms on/off to control where stories are posted. Save settings to apply changes.
                 </p>
             </div>
 
@@ -497,8 +659,13 @@ export default function SocialMediaPage() {
                                 </button>
                             </div>
                             <span className="absolute top-1 left-1 text-xs bg-black/60 text-white px-1.5 py-0.5 rounded">{index + 1}</span>
+                            {image.scheduled_time && (
+                                <span className="absolute bottom-1 left-1 right-1 text-[10px] bg-primary-600/90 text-white px-1.5 py-0.5 rounded text-center font-medium">
+                                    🕒 {image.scheduled_time.slice(0, 5)}
+                                </span>
+                            )}
                             {(image.caption || image.caption_template_id) && (
-                                <span className="absolute top-1 right-1 text-xs">✏️</span>
+                                <span className="absolute top-1 right-1 text-xs bg-white/80 rounded-full w-5 h-5 flex items-center justify-center">✏️</span>
                             )}
                         </div>
                     ))}
@@ -526,9 +693,26 @@ export default function SocialMediaPage() {
                                     ) : (
                                         <X className="h-5 w-5 text-red-500" />
                                     )}
-                                    <span className="text-sm text-gray-900 dark:text-white">
-                                        {new Date(post.posted_at || post.created_at).toLocaleString()}
-                                    </span>
+                                    <div className="flex flex-col">
+                                        <span className="text-sm text-gray-900 dark:text-white">
+                                            {new Date(post.posted_at || post.created_at).toLocaleString()}
+                                        </span>
+                                        {(post.facebook_post_id || post.instagram_post_id) && (
+                                            <div className="flex gap-2 mt-1">
+                                                {post.facebook_post_id && (
+                                                    <span className="text-[10px] bg-blue-50 text-blue-600 px-1 rounded">FB ID: {post.facebook_post_id.slice(-6)}</span>
+                                                )}
+                                                {post.instagram_post_id && (
+                                                    <span className="text-[10px] bg-pink-50 text-pink-600 px-1 rounded">IG ID: {post.instagram_post_id.slice(-6)}</span>
+                                                )}
+                                            </div>
+                                        )}
+                                        {post.status === 'failed' && post.error_message && (
+                                            <span className="text-[10px] text-red-500 max-w-[200px] truncate">
+                                                {post.error_message}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 <span className={`text-xs px-2 py-1 rounded ${post.status === 'posted' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                     {post.status === 'posted' ? 'Posted' : 'Failed'}

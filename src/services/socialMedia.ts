@@ -7,9 +7,12 @@ export interface SocialMediaSettings {
     facebook_page_token: string | null;
     instagram_account_id: string | null;
     is_connected: boolean;
+    facebook_enabled: boolean;
+    instagram_enabled: boolean;
     logo_url: string | null;
     logo_position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
     logo_size: number;
+    last_automation_run: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -70,9 +73,9 @@ export const socialMediaService = {
         const { data, error } = await supabase
             .from('social_media_settings')
             .select('*')
-            .single();
+            .maybeSingle();
 
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
             console.error('Error fetching social media settings:', error);
             throw error;
         }
@@ -119,7 +122,7 @@ export const socialMediaService = {
         return data || [];
     },
 
-    async createCaptionTemplate(template: { name: string; caption: string; hashtags?: string }): Promise<CaptionTemplate> {
+    async createCaptionTemplate(template: { name: string; caption: string; hashtags?: string | null }): Promise<CaptionTemplate> {
         const { data, error } = await supabase
             .from('caption_templates')
             .insert(template)
@@ -157,9 +160,9 @@ export const socialMediaService = {
         const { data, error } = await supabase
             .from('story_schedule')
             .select('*')
-            .single();
+            .maybeSingle();
 
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
             console.error('Error fetching schedule:', error);
             throw error;
         }
@@ -208,7 +211,7 @@ export const socialMediaService = {
         return data || [];
     },
 
-    async createPostingSlot(slot: { posting_time: string; caption_template_id?: string; custom_caption?: string }): Promise<PostingSlot> {
+    async createPostingSlot(slot: { posting_time: string; caption_template_id?: string | null; custom_caption?: string | null }): Promise<PostingSlot> {
         // Get the max slot_order
         const slots = await this.getPostingSlots();
         const maxOrder = slots.length > 0 ? Math.max(...slots.map(s => s.slot_order)) : 0;
@@ -396,16 +399,16 @@ export const socialMediaService = {
     async uploadLogo(file: File): Promise<string> {
         const fileExt = file.name.split('.').pop();
         const fileName = `logo_${Date.now()}.${fileExt}`;
-        const filePath = `social-media/${fileName}`;
+        const filePath = fileName;
 
         const { error: uploadError } = await supabase.storage
-            .from('public')
+            .from('social-media')
             .upload(filePath, file);
 
         if (uploadError) throw uploadError;
 
         const { data } = supabase.storage
-            .from('public')
+            .from('social-media')
             .getPublicUrl(filePath);
 
         await this.updateSettings({ logo_url: data.publicUrl });
@@ -418,18 +421,29 @@ export const socialMediaService = {
     async uploadStoryImage(file: File): Promise<string> {
         const fileExt = file.name.split('.').pop();
         const fileName = `story_${Date.now()}.${fileExt}`;
-        const filePath = `social-media/stories/${fileName}`;
+        const filePath = `stories/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
-            .from('public')
+            .from('social-media')
             .upload(filePath, file);
 
         if (uploadError) throw uploadError;
 
         const { data } = supabase.storage
-            .from('public')
+            .from('social-media')
             .getPublicUrl(filePath);
 
         return data.publicUrl;
+    },
+
+    // ============ UPDATE IMAGE STATUS ============
+
+    async updateImageStatus(id: string, updates: Partial<StoryImage>): Promise<void> {
+        const { error } = await supabase
+            .from('story_images')
+            .update({ ...updates })
+            .eq('id', id);
+
+        if (error) throw error;
     }
 };

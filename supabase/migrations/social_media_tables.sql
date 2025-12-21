@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS social_media_settings (
     facebook_page_token VARCHAR,
     instagram_account_id VARCHAR,
     is_connected BOOLEAN DEFAULT false,
+    facebook_enabled BOOLEAN DEFAULT true,
+    instagram_enabled BOOLEAN DEFAULT false,
     logo_url VARCHAR,
     logo_position VARCHAR DEFAULT 'bottom-right',
     logo_size INTEGER DEFAULT 80,
