@@ -382,32 +382,16 @@ export default function SocialMediaPage() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                        <Share2 className="h-8 w-8 text-primary-600" />
-                        Social Media Stories
-                    </h1>
-                    <div className="flex items-center gap-4 mt-1">
-                        <p className="text-gray-600 dark:text-gray-400">
-                            Automate posting to Facebook & Instagram Stories
-                        </p>
-                        {settings?.last_automation_run && (
-                            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-xs font-medium border border-green-100 dark:border-green-800">
-                                <Activity className="h-3 w-3" />
-                                Automation Active (Last run: {new Date(settings.last_automation_run).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
-                            </div>
-                        )}
-                        {!settings?.last_automation_run && (
-                            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-full text-xs font-medium border border-amber-100 dark:border-amber-800">
-                                <Clock className="h-3 w-3" />
-                                Automation Pending
-                            </div>
-                        )}
-                    </div>
-                </div>
-                <div className="flex gap-2">
+            {/* Header - 3 rows on tablet: Title | Buttons | Status */}
+            <div className="space-y-4">
+                {/* Row 1: Title */}
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                    <Share2 className="h-8 w-8 text-primary-600" />
+                    Social Media Stories
+                </h1>
+
+                {/* Row 2: Action Buttons */}
+                <div className="flex flex-wrap gap-2">
                     <Button
                         variant="outline"
                         onClick={handleRunAutomation}
@@ -422,6 +406,25 @@ export default function SocialMediaPage() {
                     <Button variant="primary" onClick={handleSaveSchedule} disabled={saving} leftIcon={saving ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}>
                         Save Settings
                     </Button>
+                </div>
+
+                {/* Row 3: Subtitle + Status Badge */}
+                <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-gray-600 dark:text-gray-400">
+                        Automate posting to Facebook & Instagram Stories
+                    </p>
+                    {settings?.last_automation_run && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-xs font-medium border border-green-100 dark:border-green-800">
+                            <Activity className="h-3 w-3" />
+                            Active (Last: {new Date(settings.last_automation_run).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                        </div>
+                    )}
+                    {!settings?.last_automation_run && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-full text-xs font-medium border border-amber-100 dark:border-amber-800">
+                            <Clock className="h-3 w-3" />
+                            Pending
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -646,7 +649,7 @@ export default function SocialMediaPage() {
                     </label>
                 </div>
                 <p className="text-xs text-gray-500 mb-4">Click an image to set custom caption • Images will be posted in order</p>
-                <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-3">
+                <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-3">
                     {queuedImages.map((image, index) => (
                         <div key={image.id} className="relative group aspect-[9/16] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
                             <img src={image.image_url} alt="" className="w-full h-full object-cover" />

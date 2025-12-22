@@ -261,7 +261,7 @@ export default function EditAppointmentModal({ isOpen, onClose, appointment, onS
                 <div className="space-y-6">
                     {/* Review Summary */}
                     <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-6 space-y-4">
-                        <div className="grid grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div>
                                 <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Customer</h4>
                                 <p className="text-base font-semibold text-gray-900 dark:text-white">{appointment?.customer?.name}</p>

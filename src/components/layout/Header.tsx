@@ -30,11 +30,11 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 <div className="flex items-center gap-4">
                     <button
                         onClick={onMenuClick}
-                        className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors"
+                        className="md:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors"
                     >
                         <Menu className="h-6 w-6 text-gray-700 dark:text-gray-200" />
                     </button>
-                    <div className="lg:hidden">
+                    <div className="md:hidden">
                         <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">SalonFlow</h1>
                     </div>
                 </div>

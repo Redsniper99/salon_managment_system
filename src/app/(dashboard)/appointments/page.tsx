@@ -161,61 +161,64 @@ export default function AppointmentsPage() {
 
             {/* Filters & Search */}
             <div className="card p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
-                <div className="flex flex-col lg:flex-row gap-4">
-                    {/* Date Picker */}
-                    <div className="w-full max-w-full lg:w-auto flex-shrink-0">
-                        <div className="flex gap-2">
+                {/* Filter Grid - responsive layout */}
+                {/* Mobile: all stacked | Tablet: 2 rows | Desktop: 1 row */}
+                <div className="space-y-4 lg:space-y-0 lg:flex lg:gap-4 lg:items-center">
+                    {/* Row 1 on tablet: Date Picker + All Dates button */}
+                    <div className="flex gap-2 lg:flex-shrink-0">
+                        <Input
+                            type="date"
+                            value={selectedDate === 'all' ? '' : selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value || 'all')}
+                            className="flex-1 min-w-0 lg:w-48"
+                            leftIcon={<Calendar className="h-5 w-5" />}
+                            min={getLocalDateString()}
+                        />
+                        <Button
+                            variant={selectedDate === 'all' ? 'primary' : 'outline'}
+                            size="md"
+                            onClick={() => setSelectedDate('all')}
+                            className="whitespace-nowrap"
+                        >
+                            All Dates
+                        </Button>
+                    </div>
+
+                    {/* Row 2 on tablet: Search + View Toggle */}
+                    <div className="flex gap-4 items-center">
+                        {/* Search */}
+                        <div className="flex-1 min-w-0">
                             <Input
-                                type="date"
-                                value={selectedDate === 'all' ? '' : selectedDate}
-                                onChange={(e) => setSelectedDate(e.target.value || 'all')}
-                                className="w-full lg:w-48"
-                                leftIcon={<Calendar className="h-5 w-5" />}
-                                min={getLocalDateString()}
+                                type="text"
+                                placeholder="Search by customer name, phone..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                leftIcon={<Search className="h-5 w-5" />}
                             />
+                        </div>
+
+                        {/* View Toggle */}
+                        <div className="flex gap-2 flex-shrink-0">
                             <Button
-                                variant={selectedDate === 'all' ? 'primary' : 'outline'}
+                                variant={view === 'list' ? 'primary' : 'outline'}
                                 size="md"
-                                onClick={() => setSelectedDate('all')}
-                                className="whitespace-nowrap"
+                                onClick={() => setView('list')}
                             >
-                                All Dates
+                                List
+                            </Button>
+                            <Button
+                                variant={view === 'calendar' ? 'primary' : 'outline'}
+                                size="md"
+                                onClick={() => setView('calendar')}
+                            >
+                                Calendar
                             </Button>
                         </div>
-                    </div>
-
-                    {/* Search */}
-                    <div className="flex-1">
-                        <Input
-                            type="text"
-                            placeholder="Search by customer name, phone..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            leftIcon={<Search className="h-5 w-5" />}
-                        />
-                    </div>
-
-                    {/* View Toggle */}
-                    <div className="flex gap-2">
-                        <Button
-                            variant={view === 'list' ? 'primary' : 'outline'}
-                            size="md"
-                            onClick={() => setView('list')}
-                        >
-                            List
-                        </Button>
-                        <Button
-                            variant={view === 'calendar' ? 'primary' : 'outline'}
-                            size="md"
-                            onClick={() => setView('calendar')}
-                        >
-                            Calendar
-                        </Button>
                     </div>
                 </div>
 
                 {/* Status Filters */}
-                <div className="flex gap-2 mt-4 overflow-x-auto">
+                <div className="flex gap-2 mt-4 overflow-x-auto pb-1">
                     {statuses.map((status) => (
                         <button
                             key={status}

@@ -127,12 +127,6 @@ const navItems: NavItem[] = [
         icon: Settings,
         allowedRoles: ['Owner', 'Stylist'],
     },
-    {
-        label: 'Subscription',
-        href: '/subscription',
-        icon: CreditCard,
-        allowedRoles: ['Owner'],
-    },
 ];
 
 export default function Sidebar() {
@@ -154,7 +148,7 @@ export default function Sidebar() {
                 duration: 0.3,
                 ease: 'easeInOut',
             }}
-            className="hidden lg:flex flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 min-h-screen transition-colors relative"
+            className="hidden md:flex flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 min-h-screen transition-colors relative"
         >
             {/* Collapse/Expand Button */}
             <button
@@ -197,7 +191,7 @@ export default function Sidebar() {
             </div>
 
             {/* Navigation */}
-            <nav className={cn('flex-1 px-4 space-y-1', isCollapsed && 'px-2')}>
+            <nav className={cn('flex-1 px-4 space-y-1 overflow-y-auto', isCollapsed && 'px-2')}>
                 {filteredNavItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;

@@ -96,7 +96,7 @@ export default function ReportsPage() {
                 {activeTab === 'campaigns' && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* Summary Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">

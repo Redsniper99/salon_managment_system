@@ -820,7 +820,7 @@ export default function POSPage() {
                     )}
                 </div>
 
-                {/* Right: Bill Summary */}
+                {/* Right: Bill Summary - At bottom on tablet, right side on desktop */}
                 <div className="lg:col-span-3">
                     <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 sticky top-24">
                         <div className="flex items-center justify-between mb-4">

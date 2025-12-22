@@ -159,8 +159,8 @@ export default function ServicesPage() {
                 </div>
             </div>
 
-            {/* Services Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Services Grid - Full width on tablet, 3 cols on desktop */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {services.map((service, index) => (
                     <motion.div
                         key={service.id}
