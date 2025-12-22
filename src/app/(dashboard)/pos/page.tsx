@@ -15,6 +15,8 @@ import { loyaltyService, CustomerLoyaltyInfo } from '@/services/loyalty';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/context/ToastContext';
+import { sendEmailFromServer } from '@/lib/email-server';
+import { generateReceiptEmail } from '@/lib/email-templates';
 
 export default function POSPage() {
     const { user } = useAuth();
@@ -388,7 +390,7 @@ export default function POSPage() {
             showToast('Payment processed successfully!', 'success');
 
             // Prepare for receipt
-            setLastInvoice({
+            const invoiceData = {
                 ...invoice,
                 customer: selectedCustomer,
                 items: cart,
@@ -396,8 +398,47 @@ export default function POSPage() {
                 discount: totalDiscount,
                 tax,
                 total
-            });
+            };
+            setLastInvoice(invoiceData);
             setShowReceipt(true);
+
+            // Send email receipt to customer
+            if (selectedCustomer?.email) {
+                try {
+                    const emailHtml = generateReceiptEmail({
+                        customer: {
+                            name: selectedCustomer.name,
+                            email: selectedCustomer.email,
+                            phone: selectedCustomer.phone
+                        },
+                        invoice: {
+                            id: invoice.id,
+                            created_at: invoice.created_at
+                        },
+                        items: cart,
+                        subtotal,
+                        discount: totalDiscount,
+                        tax,
+                        total,
+                        paymentMethod
+                    });
+
+                    const emailResult = await sendEmailFromServer(
+                        selectedCustomer.email,
+                        `Receipt for Your Visit - Invoice #${invoice.id.slice(0, 8)}`,
+                        emailHtml
+                    );
+
+                    if (emailResult.success) {
+                        showToast('✉️ Receipt sent to ' + selectedCustomer.email, 'success');
+                    } else {
+                        console.error('Email send failed:', emailResult.error);
+                    }
+                } catch (emailError: any) {
+                    console.error('Error sending receipt email:', emailError);
+                    // Don't block payment completion if email fails
+                }
+            }
 
             // Reset cart and state
             setCart([]);
