@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
         // Get existing appointments
         const { data: appointments } = await supabase
             .from('appointments')
-            .select('start_time')
+            .select('start_time, duration')
             .eq('stylist_id', stylistId)
             .eq('appointment_date', date)
             .neq('status', 'Cancelled')
@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
                 for (const apt of appointments) {
                     const [aptH, aptM] = apt.start_time.split(':').map(Number);
                     const aptStart = aptH * 60 + aptM;
-                    const aptDuration = 60; // Default duration since join removed
+                    const aptDuration = apt.duration || 60; // Use actual duration from appointment
                     const aptEnd = aptStart + aptDuration;
 
                     if (currentTime < aptEnd && slotEnd > aptStart) {

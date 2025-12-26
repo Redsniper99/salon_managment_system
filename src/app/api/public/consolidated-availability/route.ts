@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
         // Get all appointments for these stylists on this date (bypasses RLS with service role key)
         const { data: allAppointments, error: appointmentError } = await supabase
             .from('appointments')
-            .select('stylist_id, start_time')
+            .select('stylist_id, start_time, duration')
             .in('stylist_id', stylistIds)
             .eq('appointment_date', date)
             .neq('status', 'Cancelled')
@@ -221,7 +221,7 @@ export async function GET(request: NextRequest) {
                 for (const apt of appointments) {
                     const [aptH, aptM] = apt.start_time.split(':').map(Number);
                     const aptStart = aptH * 60 + aptM;
-                    const aptDuration = 60; // Default duration since join removed
+                    const aptDuration = apt.duration || 60; // Use actual duration from appointment
                     const aptEnd = aptStart + aptDuration;
 
                     if (currentTime < aptEnd && slotEnd > aptStart) {

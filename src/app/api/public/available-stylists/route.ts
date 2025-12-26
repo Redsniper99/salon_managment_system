@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getAdminClient } from '@/lib/supabase';
 
 // Use Service Role Key to bypass RLS and read appointments
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getAdminClient();
 
 interface TimeSlot {
     time: string;
@@ -127,7 +124,7 @@ export async function GET(request: NextRequest) {
         // Get all appointments for these stylists on this date
         const { data: allAppointments } = await supabase
             .from('appointments')
-            .select('stylist_id, start_time')
+            .select('stylist_id, start_time, duration')
             .in('stylist_id', stylistIds)
             .eq('appointment_date', date)
             .neq('status', 'Cancelled')
@@ -212,7 +209,7 @@ export async function GET(request: NextRequest) {
                     for (const apt of appointments) {
                         const [aptH, aptM] = apt.start_time.split(':').map(Number);
                         const aptStart = aptH * 60 + aptM;
-                        const aptDuration = 60; // Default duration since we removed join
+                        const aptDuration = apt.duration || 60; // Use actual duration from appointment
                         const aptEnd = aptStart + aptDuration;
 
                         if (currentTime < aptEnd && slotEnd > aptStart) {
