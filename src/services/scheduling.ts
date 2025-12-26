@@ -113,10 +113,21 @@ export const schedulingService = {
                 return [];
             }
 
-            const workingHours = stylist.working_hours || {
+            // Working hours can be either flat {start, end} or by day {Monday: {start, end}, ...}
+            let dayHours = stylist.working_hours;
+            if (dayHours && dayHours[dayName]) {
+                dayHours = dayHours[dayName];
+            }
+            const workingHours = dayHours || {
                 start: settings.default_start_time,
                 end: settings.default_end_time
             };
+
+            // Ensure we have valid start/end times
+            if (!workingHours.start || !workingHours.end) {
+                workingHours.start = settings.default_start_time;
+                workingHours.end = settings.default_end_time;
+            }
 
 
             // 3. Get stylist breaks for this day
