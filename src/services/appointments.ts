@@ -398,11 +398,25 @@ export const appointmentsService = {
         const timeChanged = updatesAny.start_time && updatesAny.start_time !== oldAppointment?.start_time;
         const dateChanged = updatesAny.appointment_date && updatesAny.appointment_date !== oldAppointment?.appointment_date;
 
+        console.log('📱 Appointment update check:', {
+            oldTime: oldAppointment?.start_time,
+            newTime: updatesAny.start_time,
+            oldDate: oldAppointment?.appointment_date,
+            newDate: updatesAny.appointment_date,
+            timeChanged,
+            dateChanged,
+            willNotify: (timeChanged || dateChanged) && data
+        });
+
         if ((timeChanged || dateChanged) && data) {
+            console.log('📱 SENDING RESCHEDULE NOTIFICATIONS...');
             try {
                 const { notificationsService } = await import('./notifications');
                 const customer = data.customer as any;
                 const stylist = data.stylist as any;
+
+                console.log('📱 Customer:', customer?.name, customer?.phone, customer?.email);
+                console.log('📱 Stylist:', stylist?.name, stylist?.phone);
 
                 // Get service names
                 let serviceNames = 'Services';
@@ -503,6 +517,32 @@ export const appointmentsService = {
                     } catch (smsError) {
                         console.error('❌ Failed to send reschedule SMS to stylist:', smsError);
                     }
+                }
+
+                // Notify all managers via SMS about reschedule
+                try {
+                    const { data: managers } = await supabase
+                        .from('staff')
+                        .select('id, name, phone')
+                        .eq('role', 'Manager')
+                        .eq('is_active', true);
+
+                    if (managers && managers.length > 0) {
+                        const managerSms = `🔄 Appointment Rescheduled! ${customer?.name || 'Customer'}'s ${serviceNames} moved from ${oldDate} ${oldAppointment?.start_time || ''} to ${newDate} ${data.start_time}. Stylist: ${stylist?.name || 'N/A'}. - SalonFlow`;
+
+                        for (const manager of managers) {
+                            if (manager.phone) {
+                                try {
+                                    await notificationsService.sendSMS(manager.phone, managerSms);
+                                    console.log('✅ Reschedule SMS sent to manager:', manager.name);
+                                } catch (smsError) {
+                                    console.error(`❌ Failed to send reschedule SMS to manager ${manager.name}:`, smsError);
+                                }
+                            }
+                        }
+                    }
+                } catch (managerError) {
+                    console.error('❌ Failed to notify managers about reschedule:', managerError);
                 }
             } catch (notificationError) {
                 console.error('❌ Failed to send reschedule notifications:', notificationError);
