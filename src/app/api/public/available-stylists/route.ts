@@ -106,8 +106,7 @@ export async function GET(request: NextRequest) {
             .from('stylist_unavailability')
             .select('stylist_id')
             .in('stylist_id', stylistIds)
-            .lte('start_date', date)
-            .gte('end_date', date);
+            .eq('unavailable_date', date);
 
         const unavailableIds = new Set(unavailability?.map(u => u.stylist_id) || []);
 
@@ -160,11 +159,18 @@ export async function GET(request: NextRequest) {
             const appointments = allAppointments?.filter(a => a.stylist_id === stylist.id) || [];
 
             // Generate time slots
-            const workingHours = stylist.working_hours || { start: '09:00', end: '18:00' };
+            // Working hours can be either flat {start, end} or by day {Monday: {start, end}, ...}
+            let dayHours = stylist.working_hours;
+            if (dayHours && dayHours[dayOfWeek]) {
+                dayHours = dayHours[dayOfWeek];
+            }
+            const workingHours = dayHours || { start: '09:00', end: '18:00' };
             const slots: TimeSlot[] = [];
 
-            const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-            const [endHour, endMinute] = workingHours.end.split(':').map(Number);
+            const startStr = workingHours.start || '09:00';
+            const endStr = workingHours.end || '18:00';
+            const [startHour, startMinute] = startStr.split(':').map(Number);
+            const [endHour, endMinute] = endStr.split(':').map(Number);
 
             const startTime = startHour * 60 + startMinute;
             const endTime = endHour * 60 + endMinute;
