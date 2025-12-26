@@ -358,7 +358,9 @@ export async function POST(request: NextRequest) {
         // ============================================
         // SEND BOOKING CONFIRMATION NOTIFICATIONS
         // ============================================
-        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.salonflow.space';
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
+            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                process.env.NEXT_PUBLIC_SITE_URL || 'https://www.salonflow.space');
         const formattedDate = new Date(appointment.date).toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
@@ -366,19 +368,21 @@ export async function POST(request: NextRequest) {
             day: 'numeric'
         });
 
-        // Send SMS confirmation
+        // Send SMS confirmation directly using TextLK
         if (customer.phone) {
             try {
-                const smsMessage = `✅ Booking Confirmed!\n\n📅 ${formattedDate}\n⏰ ${appointment.time}\n💇 ${service.name}\n👤 Stylist: ${stylist.name}\n\nThank you for choosing our salon! Reply CANCEL to cancel.`;
+                const { createTextLkService } = await import('@/services/textlk');
+                const apiKey = process.env.TEXT_LK_API_KEY;
+                const senderId = process.env.TEXT_LK_SENDER_ID;
 
-                await fetch(`${baseUrl}/api/send-sms`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        to: customer.phone,
-                        message: smsMessage
-                    })
-                });
+                if (apiKey && senderId) {
+                    const textlk = createTextLkService(apiKey, senderId);
+                    const smsMessage = `✅ Booking Confirmed!\n\n📅 ${formattedDate}\n⏰ ${appointment.time}\n💇 ${service.name}\n👤 Stylist: ${stylist.name}\n\nThank you for choosing our salon!`;
+                    await textlk.sendSMS(customer.phone, smsMessage);
+                    console.log('✅ Booking SMS sent to customer:', customer.phone);
+                } else {
+                    console.error('❌ SMS config missing: TEXTLK_API_KEY or TEXTLK_SENDER_ID');
+                }
             } catch (smsError) {
                 console.error('Failed to send SMS confirmation:', smsError);
                 // Don't fail the booking if SMS fails

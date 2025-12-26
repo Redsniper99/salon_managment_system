@@ -238,8 +238,8 @@ export const notificationsService = {
                 // Server-side: directly use TextLK service
                 const { createTextLkService } = await import('./textlk');
 
-                const apiKey = process.env.TEXTLK_API_KEY;
-                const senderId = process.env.TEXTLK_SENDER_ID;
+                const apiKey = process.env.TEXT_LK_API_KEY;
+                const senderId = process.env.TEXT_LK_SENDER_ID;
 
                 if (!apiKey || !senderId) {
                     console.error('❌ SMS config missing: TEXTLK_API_KEY or TEXTLK_SENDER_ID not set');
