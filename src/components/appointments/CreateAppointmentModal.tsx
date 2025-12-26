@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { X, Calendar, Clock, User, Scissors, CheckCircle, Users, UserCheck } from 'lucide-react';
+import { X, Calendar, Clock, User, Scissors, CheckCircle, Users, UserCheck, Search, Phone, Loader2 } from 'lucide-react';
 import Modal from '@/components/shared/Modal';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
@@ -43,6 +43,57 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
     const [hasStylistPreference, setHasStylistPreference] = useState<boolean | null>(null);
     const [selectedStylistName, setSelectedStylistName] = useState('');
 
+    // Customer lookup state
+    const [customerLookupStatus, setCustomerLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
+    const [existingCustomer, setExistingCustomer] = useState<any>(null);
+    const [isCustomerLocked, setIsCustomerLocked] = useState(false);
+
+    // Debounced phone lookup - auto search when phone has 9+ digits
+    useEffect(() => {
+        // Don't search if already locked (customer found)
+        if (isCustomerLocked) return;
+
+        // Need at least 9 digits to search
+        if (!formData.customerPhone || formData.customerPhone.length < 9) {
+            setCustomerLookupStatus('idle');
+            setExistingCustomer(null);
+            return;
+        }
+
+        setCustomerLookupStatus('searching');
+
+        // Debounce the search by 500ms
+        const timeoutId = setTimeout(async () => {
+            try {
+                const customer = await customersService.getCustomerByPhone(formData.customerPhone);
+                if (customer) {
+                    setExistingCustomer(customer);
+                    setCustomerLookupStatus('found');
+                    // Auto-fill customer data
+                    setFormData(prev => ({
+                        ...prev,
+                        customerName: customer.name || '',
+                        customerEmail: customer.email || '',
+                        customerGender: customer.gender || 'Female',
+                        customerPreferences: customer.preferences || '',
+                    }));
+                    setIsCustomerLocked(true);
+                } else {
+                    setCustomerLookupStatus('not_found');
+                    setExistingCustomer(null);
+                    setIsCustomerLocked(false);
+                }
+            } catch (error) {
+                console.error('Error looking up customer:', error);
+                setCustomerLookupStatus('not_found');
+                setExistingCustomer(null);
+                setIsCustomerLocked(false);
+            }
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [formData.customerPhone, isCustomerLocked]);
+
     // Fetch services when modal opens and reset state
     useEffect(() => {
         if (isOpen) {
@@ -51,6 +102,10 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
             setStep('selection'); // Reset step on open
             setHasStylistPreference(null); // Reset preference on open
             setSelectedStylistName('');
+            // Reset customer lookup state
+            setCustomerLookupStatus('idle');
+            setExistingCustomer(null);
+            setIsCustomerLocked(false);
         }
     }, [isOpen]);
 
@@ -159,6 +214,10 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                 stylistId: '',
                 notes: '',
             });
+            // Reset customer lookup state
+            setCustomerLookupStatus('idle');
+            setExistingCustomer(null);
+            setIsCustomerLocked(false);
             setStep('selection');
             onClose();
             onSuccess?.();
@@ -199,78 +258,118 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
             size="lg"
         >
             {step === 'selection' ? (
-                <form onSubmit={handleReview} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Customer Name */}
+                <form onSubmit={handleReview} className="space-y-3">
+                    {/* Phone Number First - with auto lookup */}
+                    <div className="space-y-2">
+                        <div className="relative">
+                            <PhoneInput
+                                label="Phone Number"
+                                value={formData.customerPhone}
+                                onChange={(value) => {
+                                    setFormData({ ...formData, customerPhone: value });
+                                    // Clear previous customer data if phone changes
+                                    if (isCustomerLocked) {
+                                        setIsCustomerLocked(false);
+                                        setExistingCustomer(null);
+                                        setCustomerLookupStatus('idle');
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            customerPhone: value,
+                                            customerName: '',
+                                            customerEmail: '',
+                                            customerGender: 'Female',
+                                            customerPreferences: '',
+                                        }));
+                                    }
+                                }}
+                                required
+                            />
+                            {/* Searching indicator */}
+                            {customerLookupStatus === 'searching' && (
+                                <div className="absolute right-3 top-9 flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span className="text-xs">Searching...</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Customer lookup status message */}
+                        {customerLookupStatus === 'found' && existingCustomer && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex items-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl"
+                            >
+                                <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                                <div className="flex-1">
+                                    <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                                        Welcome back, {existingCustomer.name}!
+                                    </p>
+                                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                                        Customer found • {existingCustomer.total_visits || 0} previous visits
+                                    </p>
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        setIsCustomerLocked(false);
+                                        setCustomerLookupStatus('idle');
+                                    }}
+                                    className="text-emerald-600 dark:text-emerald-400"
+                                >
+                                    Edit
+                                </Button>
+                            </motion.div>
+                        )}
+
+                        {customerLookupStatus === 'not_found' && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl"
+                            >
+                                <User className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                <p className="text-sm text-blue-800 dark:text-blue-200">
+                                    New customer! Please fill in their details below.
+                                </p>
+                            </motion.div>
+                        )}
+                    </div>
+
+                    {/* Row 1: Name and Email */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <Input
                             label="Customer Name"
                             type="text"
                             value={formData.customerName}
                             onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
                             placeholder="Enter customer name"
-                            leftIcon={<User className="h-5 w-5" />}
+                            leftIcon={<User className="h-4 w-4" />}
                             required
+                            disabled={isCustomerLocked}
+                            className={isCustomerLocked ? '!border-emerald-500 dark:!border-emerald-600' : ''}
                         />
-
-                        {/* Customer Phone */}
-                        <PhoneInput
-                            label="Phone Number"
-                            value={formData.customerPhone}
-                            onChange={(value) => setFormData({ ...formData, customerPhone: value })}
-                            required
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Customer Email */}
                         <Input
                             label="Email (Optional)"
                             type="email"
                             value={formData.customerEmail}
                             onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
-                            placeholder="e.g. customer@example.com"
-                        />
-
-                        {/* Customer Gender */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                Gender
-                            </label>
-                            <select
-                                value={formData.customerGender}
-                                onChange={(e) => setFormData({ ...formData, customerGender: e.target.value as 'Male' | 'Female' | 'Other' })}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
-                            >
-                                <option value="Female">Female</option>
-                                <option value="Male">Male</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Customer Preferences */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            Customer Preferences (Optional)
-                        </label>
-                        <textarea
-                            value={formData.customerPreferences}
-                            onChange={(e) => setFormData({ ...formData, customerPreferences: e.target.value })}
-                            placeholder="Any allergies, preferences, special requirements..."
-                            rows={2}
-                            className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors resize-none text-gray-900 dark:text-white"
+                            placeholder="customer@email.com"
+                            disabled={isCustomerLocked}
+                            className={isCustomerLocked ? '!border-emerald-500 dark:!border-emerald-600' : ''}
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                        {/* Date */}
+                    {/* Row 2: Date, Service, Gender */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <Input
                             label="Date"
                             type="date"
                             value={formData.date}
                             onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                            leftIcon={<Calendar className="h-5 w-5" />}
+                            leftIcon={<Calendar className="h-4 w-4" />}
                             min={new Date().toISOString().split('T')[0]}
                             required
                         />
@@ -283,7 +382,7 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                             <select
                                 value={formData.serviceId}
                                 onChange={(e) => setFormData({ ...formData, serviceId: e.target.value })}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
+                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white text-base"
                                 required
                             >
                                 <option value="">Select service</option>
@@ -295,83 +394,93 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                             </select>
                         </div>
 
-                        {/* Stylist Preference Toggle - shown after service is selected */}
-                        {formData.serviceId && (
-                            <div className="col-span-full">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                                    Do you have a specific stylist preference?
-                                </label>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <motion.button
-                                        type="button"
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.98 }}
-                                        onClick={() => {
-                                            setHasStylistPreference(true);
-                                            setFormData({ ...formData, stylistId: '', time: '' });
-                                            setSelectedStylistName('');
-                                        }}
-                                        className={`
-                                            flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all
-                                            ${hasStylistPreference === true
-                                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                                                : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 text-gray-700 dark:text-gray-300'
-                                            }
-                                        `}
-                                    >
-                                        <UserCheck className="w-5 h-5" />
-                                        <span className="font-medium">Yes, I have a preference</span>
-                                    </motion.button>
-                                    <motion.button
-                                        type="button"
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.98 }}
-                                        onClick={() => {
-                                            setHasStylistPreference(false);
-                                            setFormData({ ...formData, stylistId: '', time: '' });
-                                            setSelectedStylistName('');
-                                        }}
-                                        className={`
-                                            flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all
-                                            ${hasStylistPreference === false
-                                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                                                : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 text-gray-700 dark:text-gray-300'
-                                            }
-                                        `}
-                                    >
-                                        <Users className="w-5 h-5" />
-                                        <span className="font-medium">No, show available</span>
-                                    </motion.button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Specific Stylist Selection - shown when user has preference */}
-                        {formData.serviceId && hasStylistPreference === true && (
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                    Stylist
-                                </label>
-                                <select
-                                    value={formData.stylistId}
-                                    onChange={(e) => {
-                                        const stylist = stylists.find(s => s.id === e.target.value);
-                                        setFormData({ ...formData, stylistId: e.target.value, time: '' });
-                                        setSelectedStylistName(stylist?.name || '');
-                                    }}
-                                    className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
-                                    required={hasStylistPreference === true}
-                                >
-                                    <option value="">Select stylist</option>
-                                    {stylists.map((stylist) => (
-                                        <option key={stylist.id} value={stylist.id}>
-                                            {stylist.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
+                        {/* Gender */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Gender
+                            </label>
+                            <select
+                                value={formData.customerGender}
+                                onChange={(e) => setFormData({ ...formData, customerGender: e.target.value as 'Male' | 'Female' | 'Other' })}
+                                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-base ${isCustomerLocked
+                                    ? 'border-emerald-500 dark:border-emerald-600 cursor-not-allowed'
+                                    : 'border-gray-300 dark:border-gray-600'
+                                    }`}
+                                disabled={isCustomerLocked}
+                            >
+                                <option value="Female">Female</option>
+                                <option value="Male">Male</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
                     </div>
+
+                    {/* Stylist Preference Toggle - shown after service is selected */}
+                    {formData.serviceId && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Stylist preference?
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setHasStylistPreference(true);
+                                        setFormData({ ...formData, stylistId: '', time: '' });
+                                        setSelectedStylistName('');
+                                    }}
+                                    className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all text-sm ${hasStylistPreference === true
+                                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                                        : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 text-gray-700 dark:text-gray-300'
+                                        }`}
+                                >
+                                    <UserCheck className="w-4 h-4" />
+                                    <span>Yes</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setHasStylistPreference(false);
+                                        setFormData({ ...formData, stylistId: '', time: '' });
+                                        setSelectedStylistName('');
+                                    }}
+                                    className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all text-sm ${hasStylistPreference === false
+                                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                                        : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 text-gray-700 dark:text-gray-300'
+                                        }`}
+                                >
+                                    <Users className="w-4 h-4" />
+                                    <span>No, show available</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Specific Stylist Selection - shown when user has preference */}
+                    {formData.serviceId && hasStylistPreference === true && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Stylist
+                            </label>
+                            <select
+                                value={formData.stylistId}
+                                onChange={(e) => {
+                                    const stylist = stylists.find(s => s.id === e.target.value);
+                                    setFormData({ ...formData, stylistId: e.target.value, time: '' });
+                                    setSelectedStylistName(stylist?.name || '');
+                                }}
+                                className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white text-sm"
+                                required={hasStylistPreference === true}
+                            >
+                                <option value="">Select stylist</option>
+                                {stylists.map((stylist) => (
+                                    <option key={stylist.id} value={stylist.id}>
+                                        {stylist.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     {/* Time Slot Picker - shown when user has specific stylist preference */}
                     {formData.date && formData.stylistId && formData.serviceId && hasStylistPreference === true && (

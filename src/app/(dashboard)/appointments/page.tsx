@@ -24,7 +24,7 @@ const statusColors: Record<AppointmentStatus, string> = {
 };
 
 export default function AppointmentsPage() {
-    const [view, setView] = useState<'list' | 'calendar'>('list');
+    const [view, setView] = useState<'list' | 'calendar'>('calendar');
     const [selectedStatus, setSelectedStatus] = useState<AppointmentStatus | 'All'>('All');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedDate, setSelectedDate] = useState<string | 'all'>(getLocalDateString());
@@ -143,91 +143,89 @@ export default function AppointmentsPage() {
     });
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Appointments</h1>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">Manage all salon appointments</p>
-                </div>
+        <div className="space-y-3">
+            {/* Header - Compact */}
+            <div className="flex items-center justify-between">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Appointments</h1>
                 <Button
                     variant="primary"
-                    leftIcon={<Plus className="h-5 w-5" />}
+                    size="sm"
+                    leftIcon={<Plus className="h-4 w-4" />}
                     onClick={() => setShowCreateModal(true)}
                 >
-                    New Appointment
+                    New
                 </Button>
             </div>
 
-            {/* Filters & Search */}
-            <div className="card p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
-                {/* Filter Grid - responsive layout */}
-                {/* Mobile: all stacked | Tablet: 2 rows | Desktop: 1 row */}
-                <div className="space-y-4 lg:space-y-0 lg:flex lg:gap-4 lg:items-center">
-                    {/* Row 1 on tablet: Date Picker + All Dates button */}
-                    <div className="flex gap-2 lg:flex-shrink-0">
+            {/* Filters - Compact */}
+            <div className="card p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+                <div className="flex flex-wrap gap-3 items-center">
+                    {/* Date Picker - Only show in list view */}
+                    {view === 'list' && (
+                        <div className="flex gap-2">
+                            <Input
+                                type="date"
+                                value={selectedDate === 'all' ? '' : selectedDate}
+                                onChange={(e) => setSelectedDate(e.target.value || 'all')}
+                                className="w-40"
+                                leftIcon={<Calendar className="h-4 w-4" />}
+                                min={getLocalDateString()}
+                            />
+                            <Button
+                                variant={selectedDate === 'all' ? 'primary' : 'outline'}
+                                size="sm"
+                                onClick={() => setSelectedDate('all')}
+                            >
+                                All
+                            </Button>
+                        </div>
+                    )}
+
+                    {/* Search - More compact */}
+                    <div className="flex-1 min-w-[200px]">
                         <Input
-                            type="date"
-                            value={selectedDate === 'all' ? '' : selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value || 'all')}
-                            className="flex-1 min-w-0 lg:w-48"
-                            leftIcon={<Calendar className="h-5 w-5" />}
-                            min={getLocalDateString()}
+                            type="text"
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            leftIcon={<Search className="h-4 w-4" />}
                         />
-                        <Button
-                            variant={selectedDate === 'all' ? 'primary' : 'outline'}
-                            size="md"
-                            onClick={() => setSelectedDate('all')}
-                            className="whitespace-nowrap"
-                        >
-                            All Dates
-                        </Button>
                     </div>
 
-                    {/* Row 2 on tablet: Search + View Toggle */}
-                    <div className="flex gap-4 items-center">
-                        {/* Search */}
-                        <div className="flex-1 min-w-0">
-                            <Input
-                                type="text"
-                                placeholder="Search by customer name, phone..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                leftIcon={<Search className="h-5 w-5" />}
-                            />
-                        </div>
-
-                        {/* View Toggle */}
-                        <div className="flex gap-2 flex-shrink-0">
-                            <Button
-                                variant={view === 'list' ? 'primary' : 'outline'}
-                                size="md"
-                                onClick={() => setView('list')}
-                            >
-                                List
-                            </Button>
-                            <Button
-                                variant={view === 'calendar' ? 'primary' : 'outline'}
-                                size="md"
-                                onClick={() => setView('calendar')}
-                            >
-                                Calendar
-                            </Button>
-                        </div>
+                    {/* View Toggle - Compact */}
+                    <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+                        <button
+                            onClick={() => setView('list')}
+                            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${view === 'list'
+                                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                                }`}
+                        >
+                            List
+                        </button>
+                        <button
+                            onClick={() => setView('calendar')}
+                            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${view === 'calendar'
+                                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                                }`}
+                        >
+                            Calendar
+                        </button>
                     </div>
                 </div>
 
-                {/* Status Filters */}
-                <div className="flex gap-2 mt-4 overflow-x-auto pb-1">
+                {/* Status Filters - Compact chips */}
+                <div className="flex gap-1.5 mt-3 overflow-x-auto pb-1">
                     {statuses.map((status) => (
                         <button
                             key={status}
                             onClick={() => setSelectedStatus(status)}
                             className={cn(
-                                'px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200',
+                                'px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all',
                                 selectedStatus === status
                                     ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200'
                             )}
                         >
                             {status}

@@ -51,7 +51,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
                             'appearance-none text-base', // Reset browser styles & prevent iOS zoom
                             'bg-white dark:bg-gray-700', // Background colors
                             'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent',
-                            'disabled:bg-gray-50 disabled:cursor-not-allowed',
+                            'disabled:bg-gray-50 dark:disabled:bg-gray-600 disabled:cursor-not-allowed',
                             'text-gray-900 dark:text-white', // Text colors
                             error
                                 ? 'border-danger-500 focus:ring-danger-500'

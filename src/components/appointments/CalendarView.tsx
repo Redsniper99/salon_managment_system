@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, User } from 'lucide-react';
 import Button from '@/components/shared/Button';
+import WeeklyCalendarView from './WeeklyCalendarView';
 
 interface CalendarViewProps {
     appointments: any[];
@@ -12,7 +13,7 @@ interface CalendarViewProps {
     onDateChange?: (date: string) => void;
 }
 
-type ViewMode = 'month' | 'day';
+type ViewMode = 'week' | 'month' | 'day';
 
 const statusColors = {
     Pending: 'bg-warning-100 border-warning-300 text-warning-800 dark:bg-warning-900/30 dark:border-warning-700 dark:text-warning-200',
@@ -31,7 +32,7 @@ export default function CalendarView({ appointments, onAppointmentClick, selecte
         }
         return new Date();
     });
-    const [viewMode, setViewMode] = useState<ViewMode>('day');
+    const [viewMode, setViewMode] = useState<ViewMode>('week');
 
     // Get calendar data for the current month
     const { days, monthName, year } = useMemo(() => {
@@ -298,6 +299,26 @@ export default function CalendarView({ appointments, onAppointmentClick, selecte
         </motion.div>
     );
 
+    // Week view has its own navigation, so we conditionally render
+    if (viewMode === 'week') {
+        return (
+            <WeeklyCalendarView
+                appointments={appointments}
+                onAppointmentClick={onAppointmentClick}
+                currentDate={currentDate}
+                onDateChange={(date) => {
+                    setCurrentDate(date);
+                    if (onDateChange) {
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        onDateChange(`${year}-${month}-${day}`);
+                    }
+                }}
+            />
+        );
+    }
+
     return (
         <div className="space-y-4">
             {/* Header */}
@@ -335,6 +356,12 @@ export default function CalendarView({ appointments, onAppointmentClick, selecte
 
                     {/* View mode selector */}
                     <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+                        <button
+                            onClick={() => setViewMode('week')}
+                            className="px-3 py-1 rounded text-sm font-medium transition-colors text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                        >
+                            Week
+                        </button>
                         <button
                             onClick={() => setViewMode('month')}
                             className={`px-3 py-1 rounded text-sm font-medium transition-colors ${viewMode === 'month'
