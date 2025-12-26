@@ -133,7 +133,7 @@ export const staffService = {
     },
 
     /**
-     * Update staff member details
+     * Update staff member details - Uses API route to bypass RLS
      */
     async updateStaff(id: string, updates: {
         name?: string;
@@ -145,34 +145,27 @@ export const staffService = {
         working_hours?: { start: string; end: string };
     }): Promise<{ success: boolean; message: string }> {
         try {
-            // Update staff entry
-            const { error: staffError } = await supabase
-                .from('staff')
-                .update(updates)
-                .eq('id', id);
+            console.log('Updating staff via API:', id, updates);
 
-            if (staffError) throw staffError;
+            const response = await fetch('/api/staff/update', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id, updates }),
+            });
 
-            // If name or role changed, update profile too
-            if (updates.name || updates.role) {
-                const { data: staff } = await supabase
-                    .from('staff')
-                    .select('profile_id')
-                    .eq('id', id)
-                    .single();
+            const result = await response.json();
 
-                if (staff?.profile_id) {
-                    const profileUpdates: any = {};
-                    if (updates.name) profileUpdates.name = updates.name;
-                    if (updates.role) profileUpdates.role = updates.role;
-
-                    await supabase
-                        .from('profiles')
-                        .update(profileUpdates)
-                        .eq('id', staff.profile_id);
-                }
+            if (!response.ok || !result.success) {
+                console.error('Staff update failed:', result);
+                return {
+                    success: false,
+                    message: result.error || 'Failed to update staff member',
+                };
             }
 
+            console.log('Staff updated successfully:', result);
             return {
                 success: true,
                 message: 'Staff member updated successfully',

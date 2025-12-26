@@ -150,6 +150,7 @@ export default function StaffPage() {
             name: formData.name,
             phone: formData.phone,
             role: formData.role,
+            branch_id: formData.branch_id,
             specializations: formData.specializations,
             working_days: formData.working_days,
             working_hours: formData.working_hours,
@@ -199,15 +200,32 @@ export default function StaffPage() {
 
     const openEditModal = (staff: Staff) => {
         setSelectedStaff(staff);
+
+        // Handle working hours - can be flat {start, end} or day-based {Monday: {start, end}, ...}
+        let workingHours = { start: '09:00', end: '18:00' };
+        if (staff.workingHours) {
+            if (staff.workingHours.start && staff.workingHours.end) {
+                // Flat structure
+                workingHours = staff.workingHours;
+            } else if (typeof staff.workingHours === 'object') {
+                // Day-based structure - extract from first working day
+                const firstDay = staff.workingDays?.[0] || 'Monday';
+                const dayHours = (staff.workingHours as any)[firstDay];
+                if (dayHours?.start && dayHours?.end) {
+                    workingHours = { start: dayHours.start, end: dayHours.end };
+                }
+            }
+        }
+
         setFormData({
-            name: staff.name,
-            email: staff.email,
-            phone: staff.phone,
-            role: staff.role as any,
+            name: staff.name || '',
+            email: staff.email || '',
+            phone: staff.phone || '',
+            role: (staff.role as any) || 'Stylist',
             branch_id: staff.branchId || '',
             specializations: staff.specializations || [],
             working_days: staff.workingDays || [],
-            working_hours: staff.workingHours || { start: '09:00', end: '18:00' },
+            working_hours: workingHours,
         });
         setShowEditModal(true);
     };
@@ -541,7 +559,7 @@ export default function StaffPage() {
                                     <Button
                                         variant="primary"
                                         onClick={showAddModal ? handleAddStaff : handleEditStaff}
-                                        disabled={formLoading || !formData.name || !formData.email || formData.working_days.length === 0}
+                                        disabled={formLoading || !formData.name || (showAddModal && !formData.email) || formData.working_days.length === 0}
                                         leftIcon={formLoading ? <Loader className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
                                         className="flex-1"
                                     >
