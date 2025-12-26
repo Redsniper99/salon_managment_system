@@ -178,7 +178,15 @@ export const notificationsService = {
      */
     async sendEmail(to: string, subject: string, message: string) {
         try {
-            const response = await fetch('/api/send-email', {
+            // Get base URL for server-side calls
+            let apiUrl = '/api/send-email';
+            if (typeof window === 'undefined') {
+                const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
+                    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+                apiUrl = `${baseUrl}/api/send-email`;
+            }
+
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -207,10 +215,48 @@ export const notificationsService = {
     },
 
     /**
-     * Send SMS using Text.lk via API route (works from client & server)
+     * Get base URL for API calls (works in both development and production)
+     */
+    getBaseUrl(): string {
+        // Server-side: use environment variable
+        if (typeof window === 'undefined') {
+            return process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+                ? `https://${process.env.VERCEL_URL}`
+                : 'http://localhost:3000';
+        }
+        // Client-side: use window location
+        return window.location.origin;
+    },
+
+    /**
+     * Send SMS using Text.lk - uses direct service call for server, API route for client
      */
     async sendSMS(to: string, message: string) {
         try {
+            // Use direct TextLK service for server-side (more reliable in production)
+            if (typeof window === 'undefined') {
+                // Server-side: directly use TextLK service
+                const { createTextLkService } = await import('./textlk');
+
+                const apiKey = process.env.TEXTLK_API_KEY;
+                const senderId = process.env.TEXTLK_SENDER_ID;
+
+                if (!apiKey || !senderId) {
+                    console.error('❌ SMS config missing: TEXTLK_API_KEY or TEXTLK_SENDER_ID not set');
+                    return { success: false, error: 'SMS service not configured' };
+                }
+
+                const textlk = createTextLkService(apiKey, senderId);
+                const result = await textlk.sendSMS(to, message);
+
+                if (result.status === 'error') {
+                    return { success: false, error: result.message };
+                }
+
+                return { success: true, data: result.data };
+            }
+
+            // Client-side: use API route
             const response = await fetch('/api/send-sms', {
                 method: 'POST',
                 headers: {
