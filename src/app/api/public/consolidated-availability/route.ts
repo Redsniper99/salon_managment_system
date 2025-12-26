@@ -104,8 +104,7 @@ export async function GET(request: NextRequest) {
             .from('stylist_unavailability')
             .select('stylist_id')
             .in('stylist_id', stylistIds)
-            .lte('start_date', date)
-            .gte('end_date', date);
+            .eq('unavailable_date', date);
 
         const unavailableIds = new Set(unavailability?.map(u => u.stylist_id) || []);
 
@@ -168,8 +167,10 @@ export async function GET(request: NextRequest) {
 
         // For today, skip past slots
         let currentTime = globalStartTime;
-        if (date === new Date().toISOString().split('T')[0]) {
-            const now = new Date();
+        // Use local date (not UTC) to correctly filter today's past slots
+        const now = new Date();
+        const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        if (date === localToday) {
             const currentMinutes = now.getHours() * 60 + now.getMinutes() + 30; // 30 min buffer
             currentTime = Math.max(globalStartTime, Math.ceil(currentMinutes / slotInterval) * slotInterval);
         }

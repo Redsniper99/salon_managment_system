@@ -177,8 +177,10 @@ export async function GET(request: NextRequest) {
 
             // For today, skip past slots
             let currentTime = startTime;
-            if (date === new Date().toISOString().split('T')[0]) {
-                const now = new Date();
+            // Use local date (not UTC) to correctly filter today's past slots
+            const now = new Date();
+            const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            if (date === localToday) {
                 const currentMinutes = now.getHours() * 60 + now.getMinutes() + 30;
                 currentTime = Math.max(startTime, Math.ceil(currentMinutes / slotInterval) * slotInterval);
             }

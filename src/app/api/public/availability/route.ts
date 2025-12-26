@@ -85,8 +85,7 @@ export async function GET(request: NextRequest) {
             .from('stylist_unavailability')
             .select('*')
             .eq('stylist_id', stylistId)
-            .lte('start_date', date)
-            .gte('end_date', date);
+            .eq('unavailable_date', date);
 
         if (unavailability && unavailability.length > 0) {
             return NextResponse.json({

@@ -114,259 +114,25 @@ export const appointmentsService = {
 
         if (error) throw error;
 
-        // Send notifications to stylist (both email and SMS)
-        if (data && data.stylist) {
-            try {
-                const { notificationsService } = await import('./notifications');
-                const stylist = data.stylist as any;
-                const customer = data.customer as any;
-
-                // Get service names for display
-                let serviceNames = 'Services';
-                try {
-                    const { data: services } = await supabase
-                        .from('services')
-                        .select('name')
-                        .in('id', data.services);
-                    if (services && services.length > 0) {
-                        serviceNames = services.map(s => s.name).join(', ');
-                    }
-                } catch (err) {
-                    console.error('Error fetching service names:', err);
-                }
-
-                const appointmentDate = new Date(data.appointment_date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                });
-                const shortDate = new Date(data.appointment_date).toLocaleDateString();
-
-                // Send SMS directly to stylist (not using sendNotification since that expects customer ID)
-                if (stylist.phone) {
-                    try {
-                        const smsMessage = `📅 New Appointment! Customer: ${customer.name}, Service: ${serviceNames}, Date: ${shortDate} at ${data.start_time}. Duration: ${data.duration} mins.`;
-
-                        await notificationsService.sendSMS(stylist.phone, smsMessage);
-
-                    } catch (smsError) {
-                        console.error('❌ Failed to send SMS to stylist:', smsError);
-                    }
-                }
-
-                // Send Email with detailed information
-                const emailSubject = `New Appointment Scheduled - ${appointmentDate}`;
-                const emailMessage = `
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <h2 style="color: #7c3aed;">New Appointment Assigned</h2>
-                        <p>Hi ${stylist.name},</p>
-                        <p>A new appointment has been scheduled for you:</p>
-                        
-                        <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                            <h3 style="margin-top: 0; color: #374151;">Appointment Details</h3>
-                            <table style="width: 100%; border-collapse: collapse;">
-                                <tr>
-                                    <td style="padding: 8px 0;"><strong>Customer:</strong></td>
-                                    <td style="padding: 8px 0;">${customer.name}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 8px 0;"><strong>Date:</strong></td>
-                                    <td style="padding: 8px 0;">${appointmentDate}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 8px 0;"><strong>Time:</strong></td>
-                                    <td style="padding: 8px 0;">${data.start_time}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 8px 0;"><strong>Duration:</strong></td>
-                                    <td style="padding: 8px 0;">${data.duration} minutes</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 8px 0;"><strong>Services:</strong></td>
-                                    <td style="padding: 8px 0;">${serviceNames}</td>
-                                </tr>
-                                ${data.notes ? `
-                                <tr>
-                                    <td style="padding: 8px 0;"><strong>Notes:</strong></td>
-                                    <td style="padding: 8px 0;">${data.notes}</td>
-                                </tr>
-                                ` : ''}
-                            </table>
-                        </div>
-                        
-                        <p style="color: #6b7280; font-size: 14px;">
-                            Please make sure you're available at the scheduled time. If you have any conflicts, 
-                            please contact the salon manager immediately.
-                        </p>
-                        
-                        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                                This is an automated notification from SalonFlow.
-                            </p>
-                        </div>
-                    </div>
-                `;
-
-                if (stylist.email) {
-                    await notificationsService.sendEmail(
-                        stylist.email,
-                        emailSubject,
-                        emailMessage
-                    );
-
-                }
-            } catch (notificationError) {
-                // Log error but don't fail the appointment creation
-                console.error('❌ Failed to send notifications to stylist:', notificationError);
-            }
-        }
-
-        // Send confirmation to customer
-        if (data && data.customer) {
-            try {
-                const { notificationsService } = await import('./notifications');
-                const customer = data.customer as any;
-                const stylist = data.stylist as any;
-
-                // Get service names for display
-                let serviceNames = 'Services';
-                try {
-                    const { data: services } = await supabase
-                        .from('services')
-                        .select('name')
-                        .in('id', data.services);
-                    if (services && services.length > 0) {
-                        serviceNames = services.map(s => s.name).join(', ');
-                    }
-                } catch (err) {
-                    console.error('Error fetching service names:', err);
-                }
-
-                const appointmentDate = new Date(data.appointment_date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                });
-                const shortDate = new Date(data.appointment_date).toLocaleDateString();
-
-                // Send SMS to customer
-                if (customer.phone) {
-                    try {
-                        const customerSmsMessage = `✅ Appointment Confirmed! ${serviceNames} on ${shortDate} at ${data.start_time} with ${stylist?.name || 'our stylist'}. See you soon! - SalonFlow`;
-                        await notificationsService.sendSMS(customer.phone, customerSmsMessage);
-                        console.log('✅ SMS sent to customer:', customer.phone);
-                    } catch (smsError) {
-                        console.error('❌ Failed to send SMS to customer:', smsError);
-                    }
-                }
-
-                // Send Email to customer
-                if (customer.email) {
-                    const customerEmailSubject = `Appointment Confirmed - ${appointmentDate}`;
-                    const customerEmailMessage = `
-                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                            <h2 style="color: #7c3aed;">Your Appointment is Confirmed! ✅</h2>
-                            <p>Hi ${customer.name},</p>
-                            <p>Thank you for booking with us! Your appointment has been confirmed:</p>
-                            
-                            <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                                <h3 style="margin-top: 0; color: #374151;">Appointment Details</h3>
-                                <table style="width: 100%; border-collapse: collapse;">
-                                    <tr>
-                                        <td style="padding: 8px 0;"><strong>Date:</strong></td>
-                                        <td style="padding: 8px 0;">${appointmentDate}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style="padding: 8px 0;"><strong>Time:</strong></td>
-                                        <td style="padding: 8px 0;">${data.start_time}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style="padding: 8px 0;"><strong>Duration:</strong></td>
-                                        <td style="padding: 8px 0;">${data.duration} minutes</td>
-                                    </tr>
-                                    <tr>
-                                        <td style="padding: 8px 0;"><strong>Services:</strong></td>
-                                        <td style="padding: 8px 0;">${serviceNames}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style="padding: 8px 0;"><strong>Stylist:</strong></td>
-                                        <td style="padding: 8px 0;">${stylist?.name || 'To be assigned'}</td>
-                                    </tr>
-                                </table>
-                            </div>
-                            
-                            <p style="color: #6b7280; font-size: 14px;">
-                                If you need to reschedule or cancel, please contact us at least 24 hours in advance.
-                            </p>
-                            
-                            <p>We look forward to seeing you!</p>
-                            
-                            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                                <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                                    This is an automated confirmation from SalonFlow.
-                                </p>
-                            </div>
-                        </div>
-                    `;
-
-                    try {
-                        await notificationsService.sendEmail(customer.email, customerEmailSubject, customerEmailMessage);
-                        console.log('✅ Email sent to customer:', customer.email);
-                    } catch (emailError) {
-                        console.error('❌ Failed to send email to customer:', emailError);
-                    }
-                }
-            } catch (customerNotificationError) {
-                console.error('❌ Failed to send customer notifications:', customerNotificationError);
-            }
-        }
-
-        // Send notification to manager
+        // Send notifications via server-side API (reliable in production)
         if (data) {
             try {
-                const { notificationsService } = await import('./notifications');
-                const customer = data.customer as any;
-                const stylist = data.stylist as any;
-
-                // Get service names
-                let serviceNames = 'Services';
-                try {
-                    const { data: services } = await supabase
-                        .from('services')
-                        .select('name')
-                        .in('id', data.services);
-                    if (services && services.length > 0) {
-                        serviceNames = services.map(s => s.name).join(', ');
-                    }
-                } catch (err) { /* ignore */ }
-
-                const shortDate = new Date(data.appointment_date).toLocaleDateString();
-
-                // Get all managers
-                const { data: managers } = await supabase
-                    .from('staff')
-                    .select('id, name, phone, email')
-                    .eq('role', 'Manager')
-                    .eq('is_active', true);
-
-                if (managers && managers.length > 0) {
-                    const managerSmsMessage = `📅 New Booking! ${customer?.name || 'Customer'} booked ${serviceNames} on ${shortDate} at ${data.start_time} with ${stylist?.name || 'stylist'}. - SalonFlow`;
-
-                    for (const manager of managers) {
-                        if (manager.phone) {
-                            try {
-                                await notificationsService.sendSMS(manager.phone, managerSmsMessage);
-                                console.log('✅ SMS sent to manager:', manager.name);
-                            } catch (smsError) {
-                                console.error(`❌ Failed to send SMS to manager ${manager.name}:`, smsError);
-                            }
-                        }
-                    }
+                const response = await fetch('/api/appointments/notify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'new',
+                        appointmentId: data.id
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    console.log('✅ Appointment notifications sent via API');
+                } else {
+                    console.error('❌ Notification API error:', result.error);
                 }
-            } catch (managerNotificationError) {
-                console.error('❌ Failed to send manager notifications:', managerNotificationError);
+            } catch (notificationError) {
+                console.error('❌ Failed to send notifications:', notificationError);
             }
         }
 
@@ -393,156 +159,29 @@ export const appointmentsService = {
 
         if (error) throw error;
 
-        // Check if time or date was changed - send notifications
+        // Check if time or date was changed - send notifications via server API
         const updatesAny = updates as any;
         const timeChanged = updatesAny.start_time && updatesAny.start_time !== oldAppointment?.start_time;
         const dateChanged = updatesAny.appointment_date && updatesAny.appointment_date !== oldAppointment?.appointment_date;
 
-        console.log('📱 Appointment update check:', {
-            oldTime: oldAppointment?.start_time,
-            newTime: updatesAny.start_time,
-            oldDate: oldAppointment?.appointment_date,
-            newDate: updatesAny.appointment_date,
-            timeChanged,
-            dateChanged,
-            willNotify: (timeChanged || dateChanged) && data
-        });
-
         if ((timeChanged || dateChanged) && data) {
-            console.log('📱 SENDING RESCHEDULE NOTIFICATIONS...');
+            console.log('📱 Appointment rescheduled - sending notifications via API');
             try {
-                const { notificationsService } = await import('./notifications');
-                const customer = data.customer as any;
-                const stylist = data.stylist as any;
-
-                console.log('📱 Customer:', customer?.name, customer?.phone, customer?.email);
-                console.log('📱 Stylist:', stylist?.name, stylist?.phone);
-
-                // Get service names
-                let serviceNames = 'Services';
-                try {
-                    const { data: services } = await supabase
-                        .from('services')
-                        .select('name')
-                        .in('id', data.services);
-                    if (services && services.length > 0) {
-                        serviceNames = services.map(s => s.name).join(', ');
-                    }
-                } catch (err) { /* ignore */ }
-
-                const oldDate = oldAppointment ? new Date(oldAppointment.appointment_date).toLocaleDateString() : '';
-                const newDate = new Date(data.appointment_date).toLocaleDateString();
-                const newDateFull = new Date(data.appointment_date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
+                const response = await fetch('/api/appointments/notify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'reschedule',
+                        appointmentId: data.id,
+                        oldTime: oldAppointment?.start_time,
+                        oldDate: oldAppointment?.appointment_date
+                    })
                 });
-
-                // Notify customer via SMS
-                if (customer?.phone) {
-                    try {
-                        const customerSms = `🔄 Appointment Rescheduled! Your ${serviceNames} appointment has been updated to ${newDate} at ${data.start_time}. See you then! - SalonFlow`;
-                        await notificationsService.sendSMS(customer.phone, customerSms);
-                        console.log('✅ Reschedule SMS sent to customer:', customer.phone);
-                    } catch (smsError) {
-                        console.error('❌ Failed to send reschedule SMS to customer:', smsError);
-                    }
-                }
-
-                // Notify customer via Email
-                if (customer?.email) {
-                    try {
-                        const emailSubject = `Appointment Rescheduled - ${newDateFull}`;
-                        const emailMessage = `
-                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                                <h2 style="color: #7c3aed;">Appointment Rescheduled 🔄</h2>
-                                <p>Hi ${customer.name},</p>
-                                <p>Your appointment has been rescheduled to a new date/time:</p>
-                                
-                                <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #f59e0b;">
-                                    <strong>Previous:</strong> ${oldDate} at ${oldAppointment?.start_time || 'N/A'}
-                                </div>
-                                
-                                <div style="background: #d1fae5; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #10b981;">
-                                    <strong>New:</strong> ${newDate} at ${data.start_time}
-                                </div>
-                                
-                                <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                                    <h3 style="margin-top: 0; color: #374151;">Updated Details</h3>
-                                    <table style="width: 100%; border-collapse: collapse;">
-                                        <tr>
-                                            <td style="padding: 8px 0;"><strong>Date:</strong></td>
-                                            <td style="padding: 8px 0;">${newDateFull}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0;"><strong>Time:</strong></td>
-                                            <td style="padding: 8px 0;">${data.start_time}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0;"><strong>Services:</strong></td>
-                                            <td style="padding: 8px 0;">${serviceNames}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0;"><strong>Stylist:</strong></td>
-                                            <td style="padding: 8px 0;">${stylist?.name || 'To be assigned'}</td>
-                                        </tr>
-                                    </table>
-                                </div>
-                                
-                                <p style="color: #6b7280; font-size: 14px;">
-                                    If this new time doesn't work for you, please contact us to reschedule.
-                                </p>
-                                
-                                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                                    <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                                        This is an automated notification from SalonFlow.
-                                    </p>
-                                </div>
-                            </div>
-                        `;
-                        await notificationsService.sendEmail(customer.email, emailSubject, emailMessage);
-                        console.log('✅ Reschedule email sent to customer:', customer.email);
-                    } catch (emailError) {
-                        console.error('❌ Failed to send reschedule email to customer:', emailError);
-                    }
-                }
-
-                // Notify stylist via SMS
-                if (stylist?.phone) {
-                    try {
-                        const stylistSms = `🔄 Appointment Updated! ${customer?.name || 'Customer'}'s ${serviceNames} has been rescheduled to ${newDate} at ${data.start_time}. Duration: ${data.duration} mins. - SalonFlow`;
-                        await notificationsService.sendSMS(stylist.phone, stylistSms);
-                        console.log('✅ Reschedule SMS sent to stylist:', stylist.name);
-                    } catch (smsError) {
-                        console.error('❌ Failed to send reschedule SMS to stylist:', smsError);
-                    }
-                }
-
-                // Notify all managers via SMS about reschedule
-                try {
-                    const { data: managers } = await supabase
-                        .from('staff')
-                        .select('id, name, phone')
-                        .eq('role', 'Manager')
-                        .eq('is_active', true);
-
-                    if (managers && managers.length > 0) {
-                        const managerSms = `🔄 Appointment Rescheduled! ${customer?.name || 'Customer'}'s ${serviceNames} moved from ${oldDate} ${oldAppointment?.start_time || ''} to ${newDate} ${data.start_time}. Stylist: ${stylist?.name || 'N/A'}. - SalonFlow`;
-
-                        for (const manager of managers) {
-                            if (manager.phone) {
-                                try {
-                                    await notificationsService.sendSMS(manager.phone, managerSms);
-                                    console.log('✅ Reschedule SMS sent to manager:', manager.name);
-                                } catch (smsError) {
-                                    console.error(`❌ Failed to send reschedule SMS to manager ${manager.name}:`, smsError);
-                                }
-                            }
-                        }
-                    }
-                } catch (managerError) {
-                    console.error('❌ Failed to notify managers about reschedule:', managerError);
+                const result = await response.json();
+                if (result.success) {
+                    console.log('✅ Reschedule notifications sent via API');
+                } else {
+                    console.error('❌ Notification API error:', result.error);
                 }
             } catch (notificationError) {
                 console.error('❌ Failed to send reschedule notifications:', notificationError);
