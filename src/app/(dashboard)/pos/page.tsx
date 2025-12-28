@@ -118,7 +118,13 @@ export default function POSPage() {
         }
     };
 
+
     const fetchAvailableCoupons = async () => {
+        // Coupons feature not implemented yet - skip fetching
+        setAvailableCoupons([]);
+        return;
+
+        /* Uncomment when coupons table is created
         try {
             const now = new Date().toISOString();
             const { data, error } = await supabase
@@ -128,19 +134,17 @@ export default function POSPage() {
                 .gte('valid_until', now);
 
             if (error) {
-                // If table doesn't exist or other error, silently set empty array
-                console.warn('Coupons feature not available:', error.message);
                 setAvailableCoupons([]);
                 return;
             }
 
             setAvailableCoupons(data || []);
         } catch (error) {
-            // Silently handle - coupons are optional
-            console.warn('Coupons not configured');
             setAvailableCoupons([]);
         }
+        */
     };
+
 
     const fetchProducts = async () => {
         try {
