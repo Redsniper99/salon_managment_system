@@ -140,6 +140,63 @@ export const appointmentsService = {
     },
 
     /**
+     * Create multiple appointments (for multi-service booking)
+     */
+    async createMultipleAppointments(appointments: Array<{
+        customer_id: string;
+        stylist_id: string;
+        branch_id: string;
+        services: string[];
+        appointment_date: string;
+        start_time: string;
+        duration: number;
+        notes?: string;
+    }>) {
+        // Insert all appointments
+        const { data, error } = await supabase
+            .from('appointments')
+            .insert(
+                appointments.map(apt => ({
+                    ...apt,
+                    status: 'Pending' as AppointmentStatus
+                }))
+            )
+            .select(`
+                *,
+                customer:customers(*),
+                stylist:staff(*)
+            `);
+
+        if (error) throw error;
+
+        // Send notifications for each appointment
+        if (data && data.length > 0) {
+            for (const appointment of data) {
+                try {
+                    const response = await fetch('/api/appointments/notify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'new',
+                            appointmentId: appointment.id
+                        })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        console.log(`✅ Notification sent for appointment ${appointment.id}`);
+                    } else {
+                        console.error(`❌ Notification error for ${appointment.id}:`, result.error);
+                    }
+                } catch (notificationError) {
+                    console.error(`❌ Failed to send notification for ${appointment.id}:`, notificationError);
+                }
+            }
+        }
+
+        return data;
+    },
+
+    /**
      * Update an appointment - sends notifications if time/date changed
      */
     async updateAppointment(id: string, updates: Partial<Appointment>) {

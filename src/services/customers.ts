@@ -4,9 +4,45 @@ import { Customer } from '@/lib/types';
 export const customersService = {
     /**
      * Search customers by name or phone
+     * Supports Sri Lankan phone formats: +94768689056, 0768689056, 768689056
      */
     async searchCustomers(searchQuery: string) {
-        const { data, error } = await supabase
+        // Normalize phone number search for Sri Lankan numbers
+        let phoneSearchPatterns: string[] = [];
+
+        // Check if search query looks like a phone number (only digits)
+        const isPhoneSearch = /^\d+$/.test(searchQuery.trim());
+
+        if (isPhoneSearch) {
+            const cleaned = searchQuery.trim();
+
+            // Generate all possible phone number variations
+            if (cleaned.startsWith('94')) {
+                // Input: 94768689056 -> search for +94768689056, 0768689056, 768689056
+                phoneSearchPatterns = [
+                    `+${cleaned}`,
+                    `0${cleaned.substring(2)}`,
+                    cleaned.substring(2)
+                ];
+            } else if (cleaned.startsWith('0')) {
+                // Input: 0768689056 -> search for +94768689056, 0768689056, 768689056
+                phoneSearchPatterns = [
+                    `+94${cleaned.substring(1)}`,
+                    cleaned,
+                    cleaned.substring(1)
+                ];
+            } else {
+                // Input: 768689056 -> search for +94768689056, 0768689056, 768689056
+                phoneSearchPatterns = [
+                    `+94${cleaned}`,
+                    `0${cleaned}`,
+                    cleaned
+                ];
+            }
+        }
+
+        // Build query
+        let query = supabase
             .from('customers')
             .select(`
                 *,
@@ -14,8 +50,19 @@ export const customersService = {
                     total,
                     created_at
                 )
-            `)
-            .or(`name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
+            `);
+
+        // Add search conditions
+        if (isPhoneSearch && phoneSearchPatterns.length > 0) {
+            // Search for any of the phone number variations
+            const phoneConditions = phoneSearchPatterns.map(pattern => `phone.eq.${pattern}`).join(',');
+            query = query.or(phoneConditions);
+        } else {
+            // Name search (case-insensitive partial match)
+            query = query.or(`name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error } = await query
             .order('name')
             .limit(10);
 

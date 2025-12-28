@@ -1088,10 +1088,7 @@ function LoyaltySettingsTab({ showMessage }: LoyaltySettingsTabProps) {
 
 export default function SettingsPage() {
     const { user, hasRole } = useAuth();
-    const [activeTab, setActiveTab] = useState<'passwords' | 'commissions' | 'salaries' | 'scheduling' | 'availability' | 'loyalty'>('passwords');
-    const [loading, setLoading] = useState(false);
-    const [staff, setStaff] = useState<any[]>([]);
-    const [commissionSettings, setCommissionSettings] = useState<any[]>([]);
+    const [activeTab, setActiveTab] = useState<'passwords' | 'scheduling' | 'availability' | 'loyalty'>('passwords');
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
     const showMessage = useCallback((type: 'success' | 'error', text: string) => {
@@ -1099,42 +1096,7 @@ export default function SettingsPage() {
         setTimeout(() => setMessage(null), 5000);
     }, []);
 
-    const fetchData = useCallback(async () => {
-        try {
-            setLoading(true);
-            const [staffData, commissionsData] = await Promise.all([
-                settingsService.getAllStaff(),
-                settingsService.getCommissionSettings()
-            ]);
-            setStaff(staffData || []);
-            setCommissionSettings(commissionsData || []);
-        } catch (error: unknown) {
-            console.error('Error fetching data:', error);
-            showMessage('error', 'Failed to load settings');
-        } finally {
-            setLoading(false);
-        }
-    }, [showMessage]);
 
-    useEffect(() => {
-        if (hasRole(['Owner', 'Manager'])) {
-            fetchData();
-        }
-    }, [hasRole, fetchData]);
-
-    const handleCommissionUpdate = async (role: string, percentage: number) => {
-        try {
-            setLoading(true);
-            await settingsService.updateCommissionSettings(role, percentage);
-            showMessage('success', `Commission updated for ${role}`);
-            await fetchData();
-        } catch (error: unknown) {
-            console.error('Error updating commission:', error);
-            showMessage('error', 'Failed to update commission');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     return (
         <div className="space-y-6">
@@ -1171,18 +1133,7 @@ export default function SettingsPage() {
                     Password Management
                 </button>
 
-                {hasRole(['Owner', 'Manager']) && (
-                    <button
-                        onClick={() => setActiveTab('commissions')}
-                        className={`px-4 py-2 font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'commissions'
-                            ? 'border-primary-600 text-primary-600 dark:text-primary-400'
-                            : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                            }`}
-                    >
-                        <DollarSign className="h-4 w-4 inline mr-2" />
-                        Commission Settings
-                    </button>
-                )}
+
 
                 {hasRole(['Owner']) && (
                     <button
@@ -1248,60 +1199,7 @@ export default function SettingsPage() {
                     </div>
                 )}
 
-                {activeTab === 'commissions' && hasRole(['Owner', 'Manager']) && (
-                    <div className="space-y-6">
-                        <div>
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                                Commission Rates
-                            </h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                                Set commission percentages for different staff roles
-                            </p>
-                        </div>
 
-                        <div className="space-y-4">
-                            {commissionSettings.map((setting) => (
-                                <div key={setting.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-                                    <div>
-                                        <h4 className="font-semibold text-gray-900 dark:text-white">
-                                            {setting.role}
-                                        </h4>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                                            Applies to: {setting.applies_to}
-                                        </p>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <Input
-                                            type="number"
-                                            value={setting.commission_percentage}
-                                            onChange={(e) => {
-                                                const newSettings = commissionSettings.map(s =>
-                                                    s.id === setting.id
-                                                        ? { ...s, commission_percentage: parseFloat(e.target.value) }
-                                                        : s
-                                                );
-                                                setCommissionSettings(newSettings);
-                                            }}
-                                            min="0"
-                                            max="100"
-                                            step="0.1"
-                                            className="w-24"
-                                        />
-                                        <span className="text-gray-600 dark:text-gray-400">%</span>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleCommissionUpdate(setting.role, setting.commission_percentage)}
-                                            disabled={loading}
-                                        >
-                                            Save
-                                        </Button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
 
                 {activeTab === 'scheduling' && hasRole(['Owner']) && (
                     <SchedulingSettings showMessage={showMessage} />

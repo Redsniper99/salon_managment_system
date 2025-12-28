@@ -11,13 +11,8 @@ interface CustomerSegment {
     customer_count: number;
 }
 
-interface CustomerStats {
-    customerId: string;
-    totalVisits: number;
-    totalSpent: number;
-    lastVisitDate: string | null;
-    preferredServices: string[];
-    segments: string[];
+interface ServiceCategoryCount {
+    [category: string]: number;
 }
 
 export const segmentationService = {
@@ -60,62 +55,97 @@ export const segmentationService = {
     },
 
     /**
-     * Update customer statistics (visits, spend, last visit)
+     * Analyze customer's service preferences
      */
-    async updateCustomerStats(customerId: string): Promise<void> {
+    async analyzeCustomerServices(customerId: string): Promise<ServiceCategoryCount> {
         try {
-            // Call the database function to update stats
-            // Note: Function parameter is p_customer_id
-            const { error } = await supabase.rpc('update_customer_stats', {
-                p_customer_id: customerId
+            // Get all appointments for this customer
+            const { data: appointments, error: aptError } = await supabase
+                .from('appointments')
+                .select('services')
+                .eq('customer_id', customerId)
+                .eq('status', 'Completed');
+
+            if (aptError) throw aptError;
+
+            // Get all service IDs from appointments
+            const serviceIds = new Set<string>();
+            (appointments || []).forEach(apt => {
+                if (apt.services && Array.isArray(apt.services)) {
+                    apt.services.forEach(sid => serviceIds.add(sid));
+                }
             });
 
-            if (error) throw error;
+            if (serviceIds.size === 0) return {};
+
+            // Fetch service details to get categories
+            const { data: services, error: svcError } = await supabase
+                .from('services')
+                .select('id, category')
+                .in('id', Array.from(serviceIds));
+
+            if (svcError) throw svcError;
+
+            // Count by category
+            const categoryCounts: ServiceCategoryCount = {};
+            (services || []).forEach(service => {
+                const category = service.category;
+                categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+            });
+
+            return categoryCounts;
         } catch (error) {
-            console.error('Error updating customer stats:', error);
-            throw error;
+            console.error('Error analyzing customer services:', error);
+            return {};
         }
     },
 
     /**
-     * Analyze customer and determine their segments
-     * Now uses the database function auto_categorize_customer
-     */
-    async analyzeCustomer(customerId: string): Promise<string[]> {
-        try {
-            // Call the database function to categorize
-            const { error } = await supabase.rpc('auto_categorize_customer', {
-                p_customer_id: customerId  // FIXED: Changed from customer_id to p_customer_id
-            });
-
-            if (error) throw error;
-
-            // Fetch the updated segments to return them
-            const { data: customer, error: fetchError } = await supabase
-                .from('customers')
-                .select('segment_tags')
-                .eq('id', customerId)
-                .single();
-
-            if (fetchError) throw fetchError;
-            return customer?.segment_tags || [];
-        } catch (error) {
-            console.error('Error analyzing customer:', error);
-            return [];
-        }
-    },
-
-    /**
-     * Auto-categorize a customer based on their history
+     * Auto-categorize a customer based on their history and gender
      */
     async categorizeCustomer(customerId: string): Promise<void> {
         try {
-            // Update customer stats first
-            await this.updateCustomerStats(customerId);
+            // Get customer info
+            const { data: customer, error: custError } = await supabase
+                .from('customers')
+                .select('gender, total_visits')
+                .eq('id', customerId)
+                .single();
 
-            // Auto categorize (this is now handled by DB function)
-            await this.analyzeCustomer(customerId);
+            if (custError) throw custError;
 
+            const newTags: string[] = [];
+
+            // Only categorize if customer has visits
+            if (customer.total_visits > 0) {
+                // Analyze service preferences
+                const serviceCounts = await this.analyzeCustomerServices(customerId);
+
+                // Get top 2 service categories
+                const topCategories = Object.entries(serviceCounts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 2)
+                    .map(([category]) => category);
+
+                // Add service-based tags
+                topCategories.forEach(category => {
+                    const segmentName = `${category} Services`;
+                    newTags.push(segmentName);
+                });
+            }
+
+            // Add gender-based tag
+            if (customer.gender) {
+                newTags.push(`${customer.gender} Customers`);
+            }
+
+            // Update customer segments
+            const { error: updateError } = await supabase
+                .from('customers')
+                .update({ segment_tags: newTags })
+                .eq('id', customerId);
+
+            if (updateError) throw updateError;
 
         } catch (error) {
             console.error('Error categorizing customer:', error);
@@ -128,23 +158,37 @@ export const segmentationService = {
      */
     async categorizeAllCustomers(): Promise<void> {
         try {
+            console.log('🔄 Starting customer categorization...');
+
+            // First, ensure default segments exist
+            await this.initializeSegments();
+            console.log('✅ Segments initialized');
+
             // Get all customers
             const { data: customers, error } = await supabase
                 .from('customers')
-                .select('id');
+                .select('id, name');
 
             if (error) throw error;
 
-
+            console.log(`📊 Found ${customers?.length || 0} customers to categorize`);
 
             // Process each customer
+            let successCount = 0;
             for (const customer of customers || []) {
-                await this.categorizeCustomer(customer.id);
+                try {
+                    await this.categorizeCustomer(customer.id);
+                    successCount++;
+                } catch (err) {
+                    console.error(`Failed to categorize customer ${customer.name}:`, err);
+                }
             }
 
-            // Refresh segment counts
-            await supabase.rpc('refresh_segment_counts');
+            console.log(`✅ Categorized ${successCount} customers`);
 
+            // Manually refresh segment counts
+            await this.refreshSegmentCounts();
+            console.log('✅ Segment counts refreshed');
 
         } catch (error) {
             console.error('Error categorizing all customers:', error);
@@ -152,29 +196,53 @@ export const segmentationService = {
         }
     },
 
-    async getSegmentStats(): Promise<any[]> {
+    /**
+     * Manually refresh segment counts
+     */
+    async refreshSegmentCounts(): Promise<void> {
         try {
+            // Get all segments
+            const { data: segments, error: segError } = await supabase
+                .from('customer_segments')
+                .select('id, name');
 
+            if (segError) throw segError;
 
-            // Try to refresh counts first, but don't fail if it doesn't work
-            try {
+            console.log(`🔢 Refreshing counts for ${segments?.length || 0} segments...`);
 
-                const { data, error } = await supabase.rpc('refresh_segment_counts');
-                if (error) {
-                    console.error('❌ [SEGMENTATION] RPC Error Details:', {
-                        message: error.message,
-                        details: error.details,
-                        hint: error.hint,
-                        code: error.code
-                    });
-                    throw error;
+            // Count customers for each segment
+            for (const segment of segments || []) {
+                // Query customers that have this segment in their tags
+                const { data: customers, error: countError } = await supabase
+                    .from('customers')
+                    .select('id')
+                    .contains('segment_tags', [segment.name]);
+
+                if (countError) {
+                    console.error(`Error counting for segment ${segment.name}:`, countError);
+                    continue;
                 }
 
-            } catch (refreshError: any) {
-                console.warn('⚠️ [SEGMENTATION] Could not refresh segment counts:', refreshError?.message || refreshError);
-                // Continue anyway - we'll just show the current counts
+                const count = customers?.length || 0;
+                console.log(`  ${segment.name}: ${count} customers`);
+
+                // Update segment count
+                await supabase
+                    .from('customer_segments')
+                    .update({ customer_count: count })
+                    .eq('id', segment.id);
             }
 
+            console.log('✅ All segment counts updated');
+        } catch (error) {
+            console.error('Error refreshing segment counts:', error);
+        }
+    },
+
+    async getSegmentStats(): Promise<any[]> {
+        try {
+            // Refresh counts first
+            await this.refreshSegmentCounts();
 
             const { data, error } = await supabase
                 .from('customer_segments')
@@ -182,19 +250,54 @@ export const segmentationService = {
                 .eq('is_active', true)
                 .order('customer_count', { ascending: false });
 
-
-
             if (error) {
                 console.error('❌ [SEGMENTATION] Database error:', error);
                 throw error;
             }
 
-
-
             return data || [];
         } catch (error) {
             console.error('❌ [SEGMENTATION] Error fetching segment stats:', error);
             throw error;
+        }
+    },
+
+    /**
+     * Initialize default segments
+     */
+    async initializeSegments(): Promise<void> {
+        try {
+            const defaultSegments = [
+                { name: 'Hair Services', description: 'Customers who frequently use hair services', color: '#ec4899', icon: 'scissors' },
+                { name: 'Facial Services', description: 'Customers who prefer facial treatments', color: '#8b5cf6', icon: 'sparkles' },
+                { name: 'Beard Services', description: 'Customers using beard grooming', color: '#f59e0b', icon: 'palette' },
+                { name: 'Bridal Services', description: 'Customers booking bridal packages', color: '#f472b6', icon: 'crown' },
+                { name: 'Kids Services', description: 'Parents booking for children', color: '#10b981', icon: 'user-plus' },
+                { name: 'Spa Services', description: 'Customers enjoying spa treatments', color: '#06b6d4', icon: 'sparkles' },
+                { name: 'Male Customers', description: 'Male clientele', color: '#3b82f6', icon: 'users' },
+                { name: 'Female Customers', description: 'Female clientele', color: '#ec4899', icon: 'users' },
+            ];
+
+            for (const segment of defaultSegments) {
+                // Check if exists
+                const { data: existing } = await supabase
+                    .from('customer_segments')
+                    .select('id')
+                    .eq('name', segment.name)
+                    .single();
+
+                if (!existing) {
+                    await supabase
+                        .from('customer_segments')
+                        .insert({
+                            ...segment,
+                            is_active: true,
+                            customer_count: 0
+                        });
+                }
+            }
+        } catch (error) {
+            console.error('Error initializing segments:', error);
         }
     },
 

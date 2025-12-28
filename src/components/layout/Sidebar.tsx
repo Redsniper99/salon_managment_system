@@ -23,6 +23,7 @@ import {
     Megaphone,
     Gift,
     Share2,
+    Package,
     LucideIcon,
     ChevronLeft,
     ChevronRight,
@@ -59,6 +60,12 @@ const navItems: NavItem[] = [
         label: 'Services',
         href: '/services',
         icon: Scissors,
+        allowedRoles: ['Owner', 'Manager'],
+    },
+    {
+        label: 'Inventory',
+        href: '/inventory',
+        icon: Package,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
@@ -191,7 +198,7 @@ export default function Sidebar() {
             </div>
 
             {/* Navigation */}
-            <nav className={cn('flex-1 px-4 space-y-1 overflow-y-auto', isCollapsed && 'px-2')}>
+            <nav className={cn('flex-1 px-4 space-y-0.5 overflow-y-auto', isCollapsed && 'px-2')}>
                 {filteredNavItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;
@@ -201,17 +208,17 @@ export default function Sidebar() {
                             key={item.href}
                             href={item.href}
                             className={cn(
-                                'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative group',
+                                'flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all duration-200 relative group',
                                 isActive
                                     ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-medium'
                                     : 'text-gray-700 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50',
-                                isCollapsed && 'justify-center px-3'
+                                isCollapsed && 'justify-center px-2.5'
                             )}
                             title={isCollapsed ? item.label : ''}
                         >
                             <Icon
                                 className={cn(
-                                    'h-5 w-5 flex-shrink-0',
+                                    'h-4 w-4 flex-shrink-0',
                                     isActive
                                         ? 'text-primary-600 dark:text-primary-400'
                                         : 'text-gray-500 dark:text-gray-500'
@@ -223,7 +230,7 @@ export default function Sidebar() {
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
                                     transition={{ duration: 0.2 }}
-                                    className="whitespace-nowrap"
+                                    className="whitespace-nowrap text-sm"
                                 >
                                     {item.label}
                                 </motion.span>

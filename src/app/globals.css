@@ -87,3 +87,92 @@ body {
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Appointment blinking animations */
+@keyframes appointment-blink-warning {
+
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 15px 3px rgba(245, 158, 11, 0.5);
+  }
+}
+
+@keyframes appointment-blink-danger {
+
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 15px 3px rgba(220, 38, 38, 0.5);
+  }
+}
+
+.appointment-blink-warning {
+  animation: appointment-blink-warning 1.5s ease-in-out infinite;
+}
+
+.appointment-blink-danger {
+  animation: appointment-blink-danger 1s ease-in-out infinite;
+}
+
+/* Custom Themed Scrollbar - Applied Globally */
+/* For Webkit browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  /* gray-100 */
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1f2937;
+  /* gray-800 */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #749674;
+  /* primary-400 */
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #567856;
+  /* primary-500 */
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4B5945;
+  /* primary-600 */
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #567856;
+  /* primary-500 */
+}
+
+/* For Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #749674 #f3f4f6;
+  /* primary-400 on gray-100 */
+}
+
+.dark * {
+  scrollbar-color: #4B5945 #1f2937;
+  /* primary-600 on gray-800 */
+}

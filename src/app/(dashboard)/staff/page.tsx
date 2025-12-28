@@ -39,6 +39,8 @@ export default function StaffPage() {
         specializations: [] as string[],
         working_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as string[],
         working_hours: { start: '09:00', end: '18:00' },
+        salary: '' as string,
+        commission: '' as string,
     });
     const [formLoading, setFormLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -77,6 +79,8 @@ export default function StaffPage() {
                 specializations: s.specializations || [],
                 workingDays: s.working_days || [],
                 workingHours: s.working_hours || { start: '09:00', end: '18:00' },
+                salary: s.salary,
+                commission: s.commission,
                 isActive: s.is_active,
                 createdAt: s.created_at,
             }));
@@ -127,6 +131,8 @@ export default function StaffPage() {
             specializations: formData.specializations,
             working_days: formData.working_days,
             working_hours: formData.working_hours,
+            salary: formData.salary ? parseFloat(formData.salary) : undefined,
+            commission: formData.role === 'Stylist' && formData.commission ? parseFloat(formData.commission) : undefined,
         });
 
         setFormLoading(false);
@@ -154,6 +160,8 @@ export default function StaffPage() {
             specializations: formData.specializations,
             working_days: formData.working_days,
             working_hours: formData.working_hours,
+            salary: formData.salary ? parseFloat(formData.salary) : undefined,
+            commission: formData.role === 'Stylist' && formData.commission ? parseFloat(formData.commission) : undefined,
         });
 
         setFormLoading(false);
@@ -194,6 +202,8 @@ export default function StaffPage() {
             specializations: [],
             working_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
             working_hours: { start: '09:00', end: '18:00' },
+            salary: '',
+            commission: '',
         });
         setSelectedStaff(null);
     };
@@ -226,6 +236,8 @@ export default function StaffPage() {
             specializations: staff.specializations || [],
             working_days: staff.workingDays || [],
             working_hours: workingHours,
+            salary: staff.salary?.toString() || '',
+            commission: staff.commission?.toString() || '',
         });
         setShowEditModal(true);
     };
@@ -542,6 +554,28 @@ export default function StaffPage() {
                                         value={formData.working_hours.end}
                                         onChange={(e) => setFormData({ ...formData, working_hours: { ...formData.working_hours, end: e.target.value } })}
                                     />
+                                </div>
+
+                                {/* Salary and Commission */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <Input
+                                        label="Monthly Salary (Rs)"
+                                        type="number"
+                                        value={formData.salary}
+                                        onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
+                                        placeholder="e.g., 50000"
+                                    />
+                                    {formData.role === 'Stylist' && (
+                                        <Input
+                                            label="Commission (%)"
+                                            type="number"
+                                            value={formData.commission}
+                                            onChange={(e) => setFormData({ ...formData, commission: e.target.value })}
+                                            placeholder="e.g., 15"
+                                            min="0"
+                                            max="100"
+                                        />
+                                    )}
                                 </div>
 
                                 <div className="flex gap-3 pt-4">

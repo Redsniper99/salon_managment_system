@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { X, Calendar, Clock, User, Scissors, CheckCircle, Users, UserCheck, Search, Phone, Loader2 } from 'lucide-react';
+import { X, Calendar, Clock, User, Scissors, CheckCircle, Users, UserCheck, Search, Phone, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import Modal from '@/components/shared/Modal';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
@@ -10,11 +10,11 @@ import PhoneInput from '@/components/shared/PhoneInput';
 import { appointmentsService } from '@/services/appointments';
 import { customersService } from '@/services/customers';
 import { servicesService } from '@/services/services';
-import { staffService } from '@/services/staff';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import TimeSlotPicker from '@/components/scheduling/TimeSlotPicker';
-import AvailableStylistsView from './AvailableStylistsView';
+import MultiServiceSelector from './MultiServiceSelector';
+import ServiceSlotMapper from './ServiceSlotMapper';
+import { Service } from '@/lib/types';
 
 interface CreateAppointmentModalProps {
     isOpen: boolean;
@@ -22,9 +22,18 @@ interface CreateAppointmentModalProps {
     onSuccess?: () => void;
 }
 
+interface ServiceBooking {
+    serviceId: string;
+    stylistId: string;
+    stylistName: string;
+    time: string;
+}
+
 export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: CreateAppointmentModalProps) {
     const { user } = useAuth();
-    const [step, setStep] = useState<'selection' | 'review'>('selection');
+    const [step, setStep] = useState<'customer' | 'slots' | 'review'>('customer');
+
+    // Customer & Service Selection (Step 1)
     const [formData, setFormData] = useState({
         customerName: '',
         customerPhone: '',
@@ -32,28 +41,27 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
         customerGender: 'Female' as 'Male' | 'Female' | 'Other',
         customerPreferences: '',
         date: '',
-        time: '',
-        serviceId: '',
-        stylistId: '',
         notes: '',
     });
-    const [loading, setLoading] = useState(false);
-    const [services, setServices] = useState<any[]>([]);
-    const [stylists, setStylists] = useState<any[]>([]);
+
+    const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
     const [hasStylistPreference, setHasStylistPreference] = useState<boolean | null>(null);
-    const [selectedStylistName, setSelectedStylistName] = useState('');
+
+    // Service Bookings (Step 2)
+    const [serviceBookings, setServiceBookings] = useState<ServiceBooking[]>([]);
+
+    const [loading, setLoading] = useState(false);
+    const [services, setServices] = useState<Service[]>([]);
 
     // Customer lookup state
     const [customerLookupStatus, setCustomerLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
     const [existingCustomer, setExistingCustomer] = useState<any>(null);
     const [isCustomerLocked, setIsCustomerLocked] = useState(false);
 
-    // Debounced phone lookup - auto search when phone has 9+ digits
+    // Debounced phone lookup
     useEffect(() => {
-        // Don't search if already locked (customer found)
         if (isCustomerLocked) return;
 
-        // Need at least 9 digits to search
         if (!formData.customerPhone || formData.customerPhone.length < 9) {
             setCustomerLookupStatus('idle');
             setExistingCustomer(null);
@@ -62,14 +70,12 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
 
         setCustomerLookupStatus('searching');
 
-        // Debounce the search by 500ms
         const timeoutId = setTimeout(async () => {
             try {
                 const customer = await customersService.getCustomerByPhone(formData.customerPhone);
                 if (customer) {
                     setExistingCustomer(customer);
                     setCustomerLookupStatus('found');
-                    // Auto-fill customer data
                     setFormData(prev => ({
                         ...prev,
                         customerName: customer.name || '',
@@ -94,18 +100,11 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
         return () => clearTimeout(timeoutId);
     }, [formData.customerPhone, isCustomerLocked]);
 
-    // Fetch services when modal opens and reset state
+    // Fetch services when modal opens
     useEffect(() => {
         if (isOpen) {
             fetchServices();
-            setStylists([]); // Clear stylists until service is selected
-            setStep('selection'); // Reset step on open
-            setHasStylistPreference(null); // Reset preference on open
-            setSelectedStylistName('');
-            // Reset customer lookup state
-            setCustomerLookupStatus('idle');
-            setExistingCustomer(null);
-            setIsCustomerLocked(false);
+            resetForm();
         }
     }, [isOpen]);
 
@@ -118,32 +117,51 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
         }
     };
 
-    const fetchStylists = async (serviceId?: string) => {
-        try {
-            let data;
-            if (serviceId) {
-                // Filter stylists by service capability
-                data = await staffService.getStylistsByService(serviceId, undefined, formData.date || undefined);
-            } else {
-                // Get all stylists (fallback)
-                data = await staffService.getStylists(undefined, formData.date || undefined);
-            }
-            setStylists(data || []);
-        } catch (error) {
-            console.error('Error fetching stylists:', error);
-        }
+    const resetForm = () => {
+        setStep('customer');
+        setFormData({
+            customerName: '',
+            customerPhone: '',
+            customerEmail: '',
+            customerGender: 'Female',
+            customerPreferences: '',
+            date: '',
+            notes: '',
+        });
+        setSelectedServiceIds([]);
+        setHasStylistPreference(null);
+        setServiceBookings([]);
+        setCustomerLookupStatus('idle');
+        setExistingCustomer(null);
+        setIsCustomerLocked(false);
     };
 
-    // Refresh stylists when date or service changes (only when user has stylist preference)
-    useEffect(() => {
-        if (formData.date && formData.serviceId && hasStylistPreference === true) {
-            fetchStylists(formData.serviceId);
-        }
-    }, [formData.date, formData.serviceId, hasStylistPreference]);
+    const handleCustomerStepNext = () => {
+        // Initialize service bookings array
+        const initialBookings = selectedServiceIds.map(serviceId => ({
+            serviceId,
+            stylistId: '',
+            stylistName: '',
+            time: ''
+        }));
+        setServiceBookings(initialBookings);
+        setStep('slots');
+    };
 
-    const handleReview = (e: React.FormEvent) => {
-        e.preventDefault();
-        setStep('review');
+    const updateServiceBooking = (serviceId: string, stylistId: string, time: string, stylistName: string) => {
+        setServiceBookings(prev =>
+            prev.map(booking =>
+                booking.serviceId === serviceId
+                    ? { ...booking, stylistId, time, stylistName }
+                    : booking
+            )
+        );
+    };
+
+    const canProceedToReview = () => {
+        return serviceBookings.every(booking =>
+            booking.stylistId && booking.time
+        );
     };
 
     const handleSubmit = async () => {
@@ -158,7 +176,6 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
             let customer = await customersService.getCustomerByPhone(formData.customerPhone);
 
             if (!customer) {
-                // Create new customer with full details
                 customer = await customersService.createCustomer({
                     name: formData.customerName,
                     phone: formData.customerPhone,
@@ -168,14 +185,9 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                 });
             }
 
-            // Get service duration
-            const selectedService = services.find(s => s.id === formData.serviceId);
-            const duration = selectedService?.duration || 60;
-
             // Get branch ID
             let branchId = user.branchId;
             if (!branchId) {
-                // If user has no branch, try to get the default one
                 const { data: branches } = await supabase
                     .from('branches')
                     .select('id')
@@ -189,48 +201,35 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                 }
             }
 
-            // Create appointment
-            await appointmentsService.createAppointment({
-                customer_id: customer.id,
-                stylist_id: formData.stylistId,
-                branch_id: branchId!,
-                services: [formData.serviceId],
-                appointment_date: formData.date,
-                start_time: formData.time,
-                duration,
-                notes: formData.notes || undefined,
+            // Create appointments array
+            const appointmentsToCreate = serviceBookings.map(booking => {
+                const service = services.find(s => s.id === booking.serviceId);
+                return {
+                    customer_id: customer.id,
+                    stylist_id: booking.stylistId,
+                    branch_id: branchId!,
+                    services: [booking.serviceId], // Single service per appointment
+                    appointment_date: formData.date,
+                    start_time: booking.time,
+                    duration: service?.duration || 60,
+                    notes: formData.notes || undefined,
+                };
             });
 
-            // Reset form and close
-            setFormData({
-                customerName: '',
-                customerPhone: '',
-                customerEmail: '',
-                customerGender: 'Female',
-                customerPreferences: '',
-                date: '',
-                time: '',
-                serviceId: '',
-                stylistId: '',
-                notes: '',
-            });
-            // Reset customer lookup state
-            setCustomerLookupStatus('idle');
-            setExistingCustomer(null);
-            setIsCustomerLocked(false);
-            setStep('selection');
+            // Create all appointments
+            await appointmentsService.createMultipleAppointments(appointmentsToCreate);
+
+            // Reset and close
+            resetForm();
             onClose();
             onSuccess?.();
         } catch (error: any) {
-            console.error('Error creating appointment:', JSON.stringify(error, null, 2));
-            alert(error.message || 'Failed to create appointment');
+            console.error('Error creating appointments:', JSON.stringify(error, null, 2));
+            alert(error.message || 'Failed to create appointments');
         } finally {
             setLoading(false);
         }
     };
-
-    const selectedService = services.find(s => s.id === formData.serviceId);
-    const selectedStylist = stylists.find(s => s.id === formData.stylistId);
 
     const formatTime = (time: string) => {
         if (!time) return '';
@@ -250,16 +249,54 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
         });
     };
 
+    // Calculate total for review
+    const totalPrice = serviceBookings.reduce((sum, booking) => {
+        const service = services.find(s => s.id === booking.serviceId);
+        return sum + (service?.price || 0);
+    }, 0);
+
     return (
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title={step === 'review' ? "Review Appointment" : "New Appointment"}
+            title={
+                step === 'customer' ? 'New Appointment - Customer & Services' :
+                    step === 'slots' ? 'New Appointment - Select Time Slots' :
+                        'Review Appointments'
+            }
             size="lg"
         >
-            {step === 'selection' ? (
-                <form onSubmit={handleReview} className="space-y-3">
-                    {/* Phone Number First - with auto lookup */}
+            {/* Step Indicators */}
+            <div className="flex items-center justify-center gap-2 mb-6">
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${step === 'customer' ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300' :
+                    'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                    }`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${step === 'customer' ? 'bg-primary-500 text-white' : 'bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        }`}>1</div>
+                    <span>Customer</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${step === 'slots' ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300' :
+                    'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                    }`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${step === 'slots' ? 'bg-primary-500 text-white' : 'bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        }`}>2</div>
+                    <span>Time Slots</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${step === 'review' ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300' :
+                    'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                    }`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${step === 'review' ? 'bg-primary-500 text-white' : 'bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        }`}>3</div>
+                    <span>Review</span>
+                </div>
+            </div>
+
+            {/* Step 1: Customer & Services */}
+            {step === 'customer' && (
+                <form onSubmit={(e) => { e.preventDefault(); handleCustomerStepNext(); }} className="space-y-3">
+                    {/* Phone Number with auto lookup */}
                     <div className="space-y-2">
                         <div className="relative">
                             <PhoneInput
@@ -267,7 +304,6 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                                 value={formData.customerPhone}
                                 onChange={(value) => {
                                     setFormData({ ...formData, customerPhone: value });
-                                    // Clear previous customer data if phone changes
                                     if (isCustomerLocked) {
                                         setIsCustomerLocked(false);
                                         setExistingCustomer(null);
@@ -284,7 +320,6 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                                 }}
                                 required
                             />
-                            {/* Searching indicator */}
                             {customerLookupStatus === 'searching' && (
                                 <div className="absolute right-3 top-9 flex items-center gap-2 text-gray-500 dark:text-gray-400">
                                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -293,7 +328,6 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                             )}
                         </div>
 
-                        {/* Customer lookup status message */}
                         {customerLookupStatus === 'found' && existingCustomer && (
                             <motion.div
                                 initial={{ opacity: 0, y: -10 }}
@@ -338,7 +372,7 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                         )}
                     </div>
 
-                    {/* Row 1: Name and Email */}
+                    {/* Customer Details */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <Input
                             label="Customer Name"
@@ -362,8 +396,7 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                         />
                     </div>
 
-                    {/* Row 2: Date, Service, Gender */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <Input
                             label="Date"
                             type="date"
@@ -373,28 +406,6 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                             min={new Date().toISOString().split('T')[0]}
                             required
                         />
-
-                        {/* Service */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                Service
-                            </label>
-                            <select
-                                value={formData.serviceId}
-                                onChange={(e) => setFormData({ ...formData, serviceId: e.target.value })}
-                                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white text-base"
-                                required
-                            >
-                                <option value="">Select service</option>
-                                {services.map((service) => (
-                                    <option key={service.id} value={service.id}>
-                                        {service.name} - Rs {service.price}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Gender */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                                 Gender
@@ -415,20 +426,25 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                         </div>
                     </div>
 
-                    {/* Stylist Preference Toggle - shown after service is selected */}
-                    {formData.serviceId && (
+                    {/* Multi-Service Selector */}
+                    {formData.date && (
+                        <MultiServiceSelector
+                            services={services}
+                            selectedServiceIds={selectedServiceIds}
+                            onSelectionChange={setSelectedServiceIds}
+                        />
+                    )}
+
+                    {/* Stylist Preference */}
+                    {selectedServiceIds.length > 0 && (
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Stylist preference?
+                                Do you have a preferred stylist?
                             </label>
                             <div className="grid grid-cols-2 gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setHasStylistPreference(true);
-                                        setFormData({ ...formData, stylistId: '', time: '' });
-                                        setSelectedStylistName('');
-                                    }}
+                                    onClick={() => setHasStylistPreference(true)}
                                     className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all text-sm ${hasStylistPreference === true
                                         ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                                         : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 text-gray-700 dark:text-gray-300'
@@ -439,11 +455,7 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setHasStylistPreference(false);
-                                        setFormData({ ...formData, stylistId: '', time: '' });
-                                        setSelectedStylistName('');
-                                    }}
+                                    onClick={() => setHasStylistPreference(false)}
                                     className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 transition-all text-sm ${hasStylistPreference === false
                                         ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                                         : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 text-gray-700 dark:text-gray-300'
@@ -453,88 +465,6 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                                     <span>No, show available</span>
                                 </button>
                             </div>
-                        </div>
-                    )}
-
-                    {/* Specific Stylist Selection - shown when user has preference */}
-                    {formData.serviceId && hasStylistPreference === true && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Stylist
-                            </label>
-                            <select
-                                value={formData.stylistId}
-                                onChange={(e) => {
-                                    const stylist = stylists.find(s => s.id === e.target.value);
-                                    setFormData({ ...formData, stylistId: e.target.value, time: '' });
-                                    setSelectedStylistName(stylist?.name || '');
-                                }}
-                                className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white text-sm"
-                                required={hasStylistPreference === true}
-                            >
-                                <option value="">Select stylist</option>
-                                {stylists.map((stylist) => (
-                                    <option key={stylist.id} value={stylist.id}>
-                                        {stylist.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    {/* Time Slot Picker - shown when user has specific stylist preference */}
-                    {formData.date && formData.stylistId && formData.serviceId && hasStylistPreference === true && (
-                        <div className="col-span-full">
-                            <TimeSlotPicker
-                                stylistId={formData.stylistId}
-                                date={formData.date}
-                                serviceDuration={services.find(s => s.id === formData.serviceId)?.duration || 60}
-                                onSelect={(time) => setFormData({ ...formData, time })}
-                                selectedTime={formData.time}
-                            />
-                            {/* Hidden required input to enforce time selection */}
-                            <input
-                                type="text"
-                                value={formData.time}
-                                required
-                                className="opacity-0 h-0 w-0 absolute"
-                                onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Please select a time slot')}
-                                onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
-                            />
-                        </div>
-                    )}
-
-                    {/* Available Stylists View - shown when user has no preference */}
-                    {formData.date && formData.serviceId && hasStylistPreference === false && (
-                        <div className="col-span-full">
-                            <AvailableStylistsView
-                                serviceId={formData.serviceId}
-                                serviceName={services.find(s => s.id === formData.serviceId)?.name || ''}
-                                serviceDuration={services.find(s => s.id === formData.serviceId)?.duration || 60}
-                                date={formData.date}
-                                onSelect={(stylistId, time, stylistName) => {
-                                    setFormData({ ...formData, stylistId, time });
-                                    setSelectedStylistName(stylistName);
-                                }}
-                                branchId={user?.branchId}
-                            />
-                            {/* Hidden required inputs */}
-                            <input
-                                type="text"
-                                value={formData.stylistId}
-                                required
-                                className="opacity-0 h-0 w-0 absolute"
-                                onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Please select a stylist')}
-                                onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
-                            />
-                            <input
-                                type="text"
-                                value={formData.time}
-                                required
-                                className="opacity-0 h-0 w-0 absolute"
-                                onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Please select a time slot')}
-                                onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
-                            />
                         </div>
                     )}
 
@@ -557,57 +487,170 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                         <Button type="button" variant="outline" onClick={onClose}>
                             Cancel
                         </Button>
-                        <Button type="submit" variant="primary">
-                            Review Appointment
+                        <Button
+                            type="submit"
+                            variant="primary"
+                            disabled={!formData.date || selectedServiceIds.length === 0 || hasStylistPreference === null}
+                        >
+                            Next: Select Time Slots
                         </Button>
                     </div>
                 </form>
-            ) : (
-                <div className="space-y-6">
-                    {/* Review Summary */}
-                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-6 space-y-4">
-                        <div className="grid grid-cols-2 gap-6">
-                            <div>
-                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Customer</h4>
-                                <p className="text-base font-semibold text-gray-900 dark:text-white">{formData.customerName}</p>
-                                <p className="text-sm text-gray-600 dark:text-gray-300">{formData.customerPhone}</p>
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Stylist</h4>
-                                <p className="text-base font-semibold text-gray-900 dark:text-white">{selectedStylist?.name}</p>
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Date & Time</h4>
-                                <p className="text-base font-semibold text-gray-900 dark:text-white">{formatDate(formData.date)}</p>
-                                <p className="text-sm text-gray-600 dark:text-gray-300">{formatTime(formData.time)}</p>
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Service</h4>
-                                <p className="text-base font-semibold text-gray-900 dark:text-white">{selectedService?.name}</p>
-                                <p className="text-sm text-gray-600 dark:text-gray-300">{selectedService?.duration} mins</p>
-                            </div>
-                        </div>
+            )}
 
-                        {formData.notes && (
-                            <div className="pt-4 border-t border-gray-200 dark:border-gray-600">
-                                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</h4>
-                                <p className="text-sm text-gray-700 dark:text-gray-300">{formData.notes}</p>
-                            </div>
-                        )}
+            {/* Step 2: Time Slot Selection */}
+            {step === 'slots' && (
+                <div className="space-y-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+                        <p className="text-sm text-blue-800 dark:text-blue-200">
+                            <strong>Selected Date:</strong> {formatDate(formData.date)}
+                        </p>
+                        <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                            Please select a stylist and time slot for each service below.
+                        </p>
+                    </div>
 
-                        <div className="pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-between items-center">
-                            <span className="text-lg font-medium text-gray-900 dark:text-white">Total Price</span>
-                            <span className="text-2xl font-bold text-primary-600">Rs {selectedService?.price}</span>
-                        </div>
+                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                        {serviceBookings.map((booking, index) => {
+                            const service = services.find(s => s.id === booking.serviceId);
+                            if (!service) return null;
+
+                            // Find previous booking with same stylist for hint
+                            const previousSameStylistBooking = serviceBookings
+                                .slice(0, index) // Only look at previous bookings
+                                .reverse() // Start from most recent
+                                .find(b => b.stylistId === booking.stylistId && b.time);
+
+                            return (
+                                <ServiceSlotMapper
+                                    key={booking.serviceId}
+                                    service={service}
+                                    date={formData.date}
+                                    hasStylistPreference={hasStylistPreference!}
+                                    onSelect={(stylistId, time, stylistName) => {
+                                        updateServiceBooking(booking.serviceId, stylistId, time, stylistName);
+                                    }}
+                                    selectedStylist={booking.stylistId}
+                                    selectedTime={booking.time}
+                                    branchId={user?.branchId}
+                                    previousBookingTime={previousSameStylistBooking?.time}
+                                />
+                            );
+                        })}
                     </div>
 
                     {/* Actions */}
-                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex justify-between gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => setStep('selection')}
+                            onClick={() => setStep('customer')}
+                            leftIcon={<ChevronLeft className="h-4 w-4" />}
+                        >
+                            Back
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="primary"
+                            onClick={() => setStep('review')}
+                            disabled={!canProceedToReview()}
+                            rightIcon={<ChevronRight className="h-4 w-4" />}
+                        >
+                            Review Appointments
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Step 3: Review */}
+            {step === 'review' && (
+                <div className="space-y-6">
+                    {/* Customer Info */}
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                        <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Customer Details</h4>
+                        <p className="text-base font-semibold text-gray-900 dark:text-white">{formData.customerName}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">{formData.customerPhone}</p>
+                        {formData.customerEmail && (
+                            <p className="text-sm text-gray-600 dark:text-gray-300">{formData.customerEmail}</p>
+                        )}
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
+                            <strong>Date:</strong> {formatDate(formData.date)}
+                        </p>
+                    </div>
+
+                    {/* Appointments List */}
+                    <div className="space-y-3">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Appointments to be Created ({serviceBookings.length})
+                        </h4>
+                        {serviceBookings.map((booking, index) => {
+                            const service = services.find(s => s.id === booking.serviceId);
+                            if (!service) return null;
+
+                            return (
+                                <motion.div
+                                    key={booking.serviceId}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: index * 0.1 }}
+                                    className="border-2 border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-white dark:bg-gray-800"
+                                >
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">
+                                                    {index + 1}
+                                                </div>
+                                                <h5 className="font-semibold text-gray-900 dark:text-white">{service.name}</h5>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3 text-sm ml-10">
+                                                <div>
+                                                    <p className="text-gray-500 dark:text-gray-400">Stylist</p>
+                                                    <p className="font-medium text-gray-900 dark:text-white">{booking.stylistName}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-500 dark:text-gray-400">Time</p>
+                                                    <p className="font-medium text-gray-900 dark:text-white">{formatTime(booking.time)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-500 dark:text-gray-400">Duration</p>
+                                                    <p className="font-medium text-gray-900 dark:text-white">{service.duration} mins</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-500 dark:text-gray-400">Price</p>
+                                                    <p className="font-medium text-primary-600 dark:text-primary-400">Rs {service.price.toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Total */}
+                    <div className="bg-primary-50 dark:bg-primary-900/20 border-2 border-primary-200 dark:border-primary-800 rounded-xl p-4">
+                        <div className="flex justify-between items-center">
+                            <span className="text-lg font-medium text-gray-900 dark:text-white">Total Amount</span>
+                            <span className="text-2xl font-bold text-primary-600 dark:text-primary-400">Rs {totalPrice.toLocaleString()}</span>
+                        </div>
+                    </div>
+
+                    {formData.notes && (
+                        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                            <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</h4>
+                            <p className="text-sm text-gray-700 dark:text-gray-300">{formData.notes}</p>
+                        </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex justify-between gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setStep('slots')}
                             disabled={loading}
+                            leftIcon={<ChevronLeft className="h-4 w-4" />}
                         >
                             Back to Edit
                         </Button>
@@ -618,7 +661,7 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                             disabled={loading}
                             leftIcon={loading ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Clock className="h-5 w-5" /></motion.div> : <CheckCircle className="h-5 w-5" />}
                         >
-                            {loading ? 'Confirming...' : 'Confirm Booking'}
+                            {loading ? 'Creating Appointments...' : `Confirm ${serviceBookings.length} Appointment${serviceBookings.length > 1 ? 's' : ''}`}
                         </Button>
                     </div>
                 </div>

@@ -303,7 +303,8 @@ export const earningsService = {
                     id,
                     stylist_id,
                     appointment_date,
-                    services
+                    services,
+                    stylist:staff(id, commission)
                 `)
                 .in('id', appointmentIds);
 
@@ -313,22 +314,8 @@ export const earningsService = {
                 return;
             }
 
-            // Get commission settings for stylist role
-            const { data: commissionSettings } = await supabase
-                .from('commission_settings')
-                .select('*')
-                .eq('role', 'Stylist')
-                .eq('is_active', true)
-                .single();
-
-            const commissionRate = commissionSettings?.commission_percentage || 40;
-
-            // Group invoice items by appointment (if appointmentId is present)
-            // Otherwise, distribute equally among appointments
-            const appointmentServicesMap = new Map<string, string[]>();
-            appointments.forEach(apt => {
-                appointmentServicesMap.set(apt.id, apt.services || []);
-            });
+            // Default commission rate (fallback if staff doesn't have one set)
+            const DEFAULT_COMMISSION = 40;
 
             // Calculate earnings per stylist per appointment
             for (const appointment of appointments) {
@@ -340,36 +327,51 @@ export const earningsService = {
                     continue;
                 }
 
-                // Find items belonging to this appointment's services
+                // Get commission rate from stylist record, fall back to global settings
+                let commissionRate = DEFAULT_COMMISSION;
+                const stylistData = appointment.stylist as any; // Type assertion for nested relation
+                if (stylistData && stylistData.commission) {
+                    commissionRate = stylistData.commission;
+                } else {
+                    // Fallback to commission_settings table
+                    const { data: commissionSettings } = await supabase
+                        .from('commission_settings')
+                        .select('*')
+                        .eq('role', 'Stylist')
+                        .eq('is_active', true)
+                        .single();
+                    if (commissionSettings?.commission_percentage) {
+                        commissionRate = commissionSettings.commission_percentage;
+                    }
+                }
+
+                // Find items belonging to this appointment
                 let serviceRevenue = 0;
-                const appointmentServices = appointment.services || [];
+                let additionalFeesTotal = 0;
 
                 for (const item of invoiceItems) {
-                    // If item has appointmentId, match directly
+                    // Match items by appointmentId
                     if (item.appointmentId === appointment.id) {
                         if (item.type === 'service' || item.type === 'appointment') {
-                            serviceRevenue += (item.price || 0) * (item.quantity || 1);
+                            const itemRevenue = (item.price || 0) * (item.quantity || 1);
+                            serviceRevenue += itemRevenue;
+
+                            // Add additional fee if present
+                            const additionalFee = item.additionalFee || 0;
+                            additionalFeesTotal += additionalFee;
                         }
                     }
-                    // If item doesn't have appointmentId but has serviceId, check if service belongs to this appointment
-                    else if (!item.appointmentId && item.serviceId && appointmentServices.includes(item.serviceId)) {
-                        serviceRevenue += (item.price || 0) * (item.quantity || 1);
-                    }
                 }
 
-                // If no direct matching, distribute services equally (for backward compatibility)
-                if (serviceRevenue === 0 && appointments.length > 0) {
-                    const totalServiceRevenue = invoiceItems
-                        .filter((item: any) => item.type === 'service' || item.type === 'appointment')
-                        .reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
-                    serviceRevenue = totalServiceRevenue / appointments.length;
-                }
-
-                if (serviceRevenue === 0) {
+                if (serviceRevenue === 0 && additionalFeesTotal === 0) {
                     continue;
                 }
 
-                const commissionAmount = (serviceRevenue * commissionRate) / 100;
+                // Calculate commission on both service revenue and additional fees
+                const totalRevenue = serviceRevenue + additionalFeesTotal;
+                const commissionAmount = (totalRevenue * commissionRate) / 100;
+
+                console.log(`💰 Earnings for ${appointment.id}: Revenue=${totalRevenue} (Service=${serviceRevenue}, AddFees=${additionalFeesTotal}), Commission=${commissionAmount} (${commissionRate}%)`);
 
                 // Get or create earnings record for this date
                 const { data: existingEarning } = await supabase
@@ -384,7 +386,7 @@ export const earningsService = {
                     await supabase
                         .from('staff_earnings')
                         .update({
-                            service_revenue: existingEarning.service_revenue + serviceRevenue,
+                            service_revenue: existingEarning.service_revenue + totalRevenue,
                             commission_amount: existingEarning.commission_amount + commissionAmount,
                             total_earnings: existingEarning.total_earnings + commissionAmount,
                             appointments_count: existingEarning.appointments_count + 1,
@@ -398,7 +400,7 @@ export const earningsService = {
                         .insert({
                             staff_id: stylistId,
                             date,
-                            service_revenue: serviceRevenue,
+                            service_revenue: totalRevenue,
                             commission_amount: commissionAmount,
                             salary_amount: 0,
                             total_earnings: commissionAmount,

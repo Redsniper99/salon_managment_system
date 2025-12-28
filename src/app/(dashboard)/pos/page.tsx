@@ -12,6 +12,7 @@ import { customersService } from '@/services/customers';
 import { invoicesService } from '@/services/invoices';
 import { appointmentsService } from '@/services/appointments';
 import { loyaltyService, CustomerLoyaltyInfo } from '@/services/loyalty';
+import { inventoryService } from '@/services/inventory';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/context/ToastContext';
@@ -35,6 +36,8 @@ export default function POSPage() {
     // Appointment integration state
     const [customerAppointments, setCustomerAppointments] = useState<any[]>([]);
     const [loadingAppointments, setLoadingAppointments] = useState(false);
+    // Additional fee tracking: Map<appointmentId, {fee: number, reason: string}>
+    const [appointmentAdditionalFees, setAppointmentAdditionalFees] = useState<Map<string, { fee: number, reason: string }>>(new Map());
 
     // Coupon state
     const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
@@ -46,6 +49,11 @@ export default function POSPage() {
 
     // Receipt Modal
     const [showReceipt, setShowReceipt] = useState(false);
+
+    // Inventory Products state
+    const [products, setProducts] = useState<any[]>([]);
+    const [productSearch, setProductSearch] = useState('');
+    const [activeTab, setActiveTab] = useState<'services' | 'products' | 'appointments'>('services');
     const [lastInvoice, setLastInvoice] = useState<any>(null);
 
     // UI section toggles
@@ -59,10 +67,11 @@ export default function POSPage() {
     const [loyaltyType, setLoyaltyType] = useState<'card' | 'points' | 'visit' | 'none'>('none');
     const [pointsToRedeem, setPointsToRedeem] = useState(0);
 
-    // Fetch services and coupons on mount
+    // Fetch services, coupons, and products on mount
     useEffect(() => {
         fetchServices();
         fetchAvailableCoupons();
+        fetchProducts();
     }, []);
 
     // Search customers when query changes
@@ -111,10 +120,27 @@ export default function POSPage() {
 
     const fetchAvailableCoupons = async () => {
         try {
-            const data = await invoicesService.getActivePromoCodes();
+            const now = new Date().toISOString();
+            const { data, error } = await supabase
+                .from('coupons')
+                .select('*')
+                .eq('is_active', true)
+                .gte('valid_until', now);
+
+            if (error) throw error;
             setAvailableCoupons(data || []);
         } catch (error) {
             console.error('Error fetching coupons:', error);
+        }
+    };
+
+    const fetchProducts = async () => {
+        try {
+            const data = await inventoryService.getProducts();
+            setProducts(data || []);
+        } catch (error) {
+            console.error('Error fetching products:', error);
+            showToast('Failed to load products', 'error');
         }
     };
 
@@ -157,6 +183,9 @@ export default function POSPage() {
             return;
         }
 
+        // Get additional fee for this appointment (if any)
+        const additionalFeeData = appointmentAdditionalFees.get(appointment.id);
+
         const newItems = appointment.services_data.map((service: any) => ({
             type: 'appointment',
             appointmentId: appointment.id,
@@ -164,13 +193,20 @@ export default function POSPage() {
             name: service.name,
             price: service.price,
             quantity: 1,
+            stylistId: appointment.stylist?.id, // Add stylist ID for commission tracking
             stylistName: appointment.stylist?.name || 'Unknown',
             startTime: appointment.start_time,
-            duration: appointment.duration
+            duration: appointment.duration,
+            additionalFee: additionalFeeData?.fee || 0, // Add additional fee
+            additionalFeeReason: additionalFeeData?.reason || ''
         }));
 
         setCart([...cart, ...newItems]);
-        showToast(`Added appointment (${appointment.start_time}) to bill`, 'success');
+
+        const feeMsg = additionalFeeData && additionalFeeData.fee > 0
+            ? ` + ${formatCurrency(additionalFeeData.fee)} additional fee`
+            : '';
+        showToast(`Added appointment (${appointment.start_time})${feeMsg} to bill`, 'success');
     };
 
     // Remove entire appointment from cart
@@ -196,7 +232,40 @@ export default function POSPage() {
                 quantity: 1
             }]);
         }
-        showToast(`Added ${service.name} to cart`, 'success');
+        showToast('Service added to cart', 'success');
+    };
+
+    const addProductToCart = (product: any) => {
+        // Check stock availability
+        if (product.current_stock <= 0) {
+            showToast('Product out of stock!', 'error');
+            return;
+        }
+
+        const existingItem = cart.find(item => item.productId === product.id);
+        if (existingItem) {
+            // Check if we have enough stock
+            if (existingItem.quantity >= product.current_stock) {
+                showToast(`Only ${product.current_stock} ${product.unit} available`, 'error');
+                return;
+            }
+            setCart(cart.map(item =>
+                item.productId === product.id
+                    ? { ...item, quantity: item.quantity + 1 }
+                    : item
+            ));
+        } else {
+            setCart([...cart, {
+                type: 'product',
+                productId: product.id,
+                name: product.name,
+                price: product.selling_price,
+                quantity: 1,
+                stock: product.current_stock,
+                unit: product.unit
+            }]);
+        }
+        showToast('Product added to cart', 'success');
     };
 
     const addManualItem = () => {
@@ -323,10 +392,13 @@ export default function POSPage() {
                     type: item.type,
                     serviceId: item.serviceId,
                     appointmentId: item.appointmentId,
+                    stylistId: item.stylistId, // Include stylist for commission tracking
                     name: item.name,
                     description: item.name,
                     price: item.price,
-                    quantity: item.quantity
+                    quantity: item.quantity,
+                    additionalFee: item.additionalFee || 0, // Include additional fee
+                    additionalFeeReason: item.additionalFeeReason || '' // Include reason
                 })),
                 subtotal,
                 discount,
@@ -344,6 +416,21 @@ export default function POSPage() {
                     showToast(`${appointmentIds.length} appointment(s) marked as completed`, 'success');
                 } catch (aptError) {
                     console.error('Error marking appointments complete:', aptError);
+                }
+            }
+
+            // Deduct inventory stock for products sold
+            const productItems = cart.filter(item => item.type === 'product' && item.productId);
+            if (productItems.length > 0) {
+                try {
+                    for (const item of productItems) {
+                        await inventoryService.deductStock(item.productId, item.quantity, invoice.id);
+                    }
+                    showToast(`Stock updated for ${productItems.length} product(s)`, 'success');
+                } catch (stockError) {
+                    console.error('Error deducting stock:', stockError);
+                    // Don't fail payment for stock errors, but log them
+                    showToast('Warning: Stock levels may not have updated correctly', 'warning');
                 }
             }
 
@@ -460,7 +547,11 @@ export default function POSPage() {
         }
     };
 
-    const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const subtotal = cart.reduce((sum, item) => {
+        const itemTotal = item.price * item.quantity;
+        const additionalFee = item.additionalFee || 0;
+        return sum + itemTotal + additionalFee;
+    }, 0);
     const tax = subtotal * 0.05; // 5% tax
     const totalDiscount = discount + loyaltyDiscount; // Combined promo + loyalty discount
     const total = Math.max(0, subtotal - totalDiscount + tax);
@@ -629,13 +720,53 @@ export default function POSPage() {
                                                     </div>
                                                 </div>
                                                 {!inCart && (
-                                                    <div className="mt-2 flex flex-wrap gap-1">
-                                                        {appointment.services_data?.map((s: any) => (
-                                                            <span key={s.id} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-300">
-                                                                {s.name}
-                                                            </span>
-                                                        ))}
-                                                    </div>
+                                                    <>
+                                                        <div className="mt-2 flex flex-wrap gap-1">
+                                                            {appointment.services_data?.map((s: any) => (
+                                                                <span key={s.id} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-300">
+                                                                    {s.name}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                        {/* Additional Fee Input */}
+                                                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" onClick={(e) => e.stopPropagation()}>
+                                                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">💰 Optional Additional Fee</p>
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                <Input
+                                                                    type="number"
+                                                                    placeholder="Fee amount"
+                                                                    value={appointmentAdditionalFees.get(appointment.id)?.fee || ''}
+                                                                    onChange={(e) => {
+                                                                        const newFees = new Map(appointmentAdditionalFees);
+                                                                        const existing = newFees.get(appointment.id) || { fee: 0, reason: '' };
+                                                                        newFees.set(appointment.id, {
+                                                                            ...existing,
+                                                                            fee: parseFloat(e.target.value) || 0
+                                                                        });
+                                                                        setAppointmentAdditionalFees(newFees);
+                                                                    }}
+                                                                    min="0"
+                                                                    step="10"
+                                                                    className="text-sm"
+                                                                />
+                                                                <Input
+                                                                    type="text"
+                                                                    placeholder="Reason (optional)"
+                                                                    value={appointmentAdditionalFees.get(appointment.id)?.reason || ''}
+                                                                    onChange={(e) => {
+                                                                        const newFees = new Map(appointmentAdditionalFees);
+                                                                        const existing = newFees.get(appointment.id) || { fee: 0, reason: '' };
+                                                                        newFees.set(appointment.id, {
+                                                                            ...existing,
+                                                                            reason: e.target.value
+                                                                        });
+                                                                        setAppointmentAdditionalFees(newFees);
+                                                                    }}
+                                                                    className="text-sm"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </>
                                                 )}
                                             </motion.div>
                                         );

@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
             .eq('stylist_id', stylistId);
 
         // Get existing appointments
-        const { data: appointments } = await supabase
+        const { data: appointments, error: appointmentsError } = await supabase
             .from('appointments')
             .select('start_time, duration')
             .eq('stylist_id', stylistId)
@@ -118,6 +118,12 @@ export async function GET(request: NextRequest) {
             .neq('status', 'Cancelled')
             .neq('status', 'NoShow')
             .neq('status', 'Completed');
+
+        if (appointmentsError) {
+            console.error('❌ Error fetching appointments:', appointmentsError);
+        }
+
+        console.log(`📅 Stylist availability: Found ${appointments?.length || 0} appointments for stylist ${stylistId} on ${date}`);
 
         // Generate time slots
         const workingHours = stylist.working_hours || { start: '09:00', end: '18:00' };

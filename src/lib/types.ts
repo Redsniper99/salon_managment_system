@@ -13,11 +13,9 @@ export interface User {
 // Appointment Types
 export type AppointmentStatus =
     | 'Pending'
-    | 'Confirmed'
-    | 'InService'
+    | 'InProgress'
     | 'Completed'
-    | 'Cancelled'
-    | 'NoShow';
+    | 'Cancelled';
 
 export interface Appointment {
     id: string;
@@ -83,6 +81,8 @@ export interface Staff {
         start: string;
         end: string;
     };
+    salary?: number; // Monthly salary for all staff
+    commission?: number; // Commission percentage for stylists only
     isActive: boolean;
     createdAt: string;
 }
@@ -221,4 +221,37 @@ export interface StaffPerformance {
     totalRevenue: number;
     appointmentCount: number;
     completionRate: number;
+}
+
+// Inventory Types
+export type InventoryCategory = 'Hair Care' | 'Skin Care' | 'Tools' | 'Supplies' | 'Other';
+export type InventoryTransactionType = 'restock' | 'sale' | 'adjustment' | 'waste';
+
+export interface InventoryProduct {
+    id: string;
+    name: string;
+    category: InventoryCategory;
+    description?: string;
+    sku?: string;
+    current_stock: number;
+    min_stock_level: number;
+    unit: string;
+    cost_per_unit: number;
+    selling_price: number;
+    supplier?: string;
+    last_restocked_at?: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface InventoryTransaction {
+    id: string;
+    inventory_id: string;
+    transaction_type: InventoryTransactionType;
+    quantity: number;
+    reference_id?: string;
+    notes?: string;
+    created_by?: string;
+    created_at: string;
 }

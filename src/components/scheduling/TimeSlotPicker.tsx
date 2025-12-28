@@ -17,6 +17,7 @@ interface TimeSlotPickerProps {
     serviceDuration: number; // in minutes
     onSelect: (time: string) => void;
     selectedTime?: string;
+    previousBookingTime?: string; // Previously selected time for sequential booking hint
 }
 
 export default function TimeSlotPicker({
@@ -24,7 +25,8 @@ export default function TimeSlotPicker({
     date,
     serviceDuration,
     onSelect,
-    selectedTime
+    selectedTime,
+    previousBookingTime
 }: TimeSlotPickerProps) {
     const [slots, setSlots] = useState<TimeSlot[]>([]);
     const [loading, setLoading] = useState(false);
@@ -62,6 +64,10 @@ export default function TimeSlotPicker({
         }
         if (selectedTime === slot.time) {
             return 'bg-primary-600 text-white ring-2 ring-primary-400';
+        }
+        // Highlight previous booking time with blue border
+        if (previousBookingTime === slot.time) {
+            return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 cursor-pointer ring-2 ring-blue-400 dark:ring-blue-500';
         }
         return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 cursor-pointer';
     };

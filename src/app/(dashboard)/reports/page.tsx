@@ -259,6 +259,8 @@ export default function ReportsPage() {
 }
 
 function SystemReports() {
+    const [downloading, setDownloading] = useState<string | null>(null);
+
     const reports = [
         {
             id: 'sales_monthly',
@@ -284,15 +286,45 @@ function SystemReports() {
         {
             id: 'inventory_status',
             title: 'Inventory Status',
-            description: 'Current stock levels, low stock alerts, and usage history.',
-            icon: Calendar, // Using Calendar as placeholder for Inventory icon
+            description: 'Current stock levels, low stock alerts, and category breakdown.',
+            icon: BarChart3,
             color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
         }
     ];
 
-    const handleDownload = (reportId: string) => {
-        // Placeholder for download logic
-        alert(`Downloading ${reportId}... (Feature coming soon)`);
+    const handleDownload = async (reportId: string) => {
+        setDownloading(reportId);
+        try {
+            // Dynamic imports to reduce bundle size
+            const { reportsService } = await import('@/services/reports');
+
+            const now = new Date();
+            const currentMonth = now.getMonth() + 1;
+            const currentYear = now.getFullYear();
+
+            if (reportId === 'sales_monthly') {
+                const { generateSalesReportPDF } = await import('@/lib/pdf-generator');
+                const data = await reportsService.getSalesReportData(currentMonth, currentYear);
+                generateSalesReportPDF(data);
+            } else if (reportId === 'customer_growth') {
+                const { generateCustomerGrowthReportPDF } = await import('@/lib/pdf-generator');
+                const data = await reportsService.getCustomerGrowthReportData();
+                generateCustomerGrowthReportPDF(data);
+            } else if (reportId === 'staff_performance') {
+                const { generateStaffPerformanceReportPDF } = await import('@/lib/pdf-generator');
+                const data = await reportsService.getStaffPerformanceReportData();
+                generateStaffPerformanceReportPDF(data);
+            } else if (reportId === 'inventory_status') {
+                const { generateInventoryReportPDF } = await import('@/lib/pdf-generator');
+                const data = await reportsService.getInventoryReportData();
+                generateInventoryReportPDF(data);
+            }
+        } catch (error: any) {
+            console.error('Error generating report:', error);
+            alert(`Failed to generate report: ${error.message}`);
+        } finally {
+            setDownloading(null);
+        }
     };
 
     return (
@@ -317,10 +349,20 @@ function SystemReports() {
                     <div className="mt-6 flex justify-end">
                         <button
                             onClick={() => handleDownload(report.id)}
-                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 dark:text-primary-400 dark:bg-primary-900/20 dark:hover:bg-primary-900/30 rounded-lg transition-colors"
+                            disabled={downloading === report.id}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 dark:text-primary-400 dark:bg-primary-900/20 dark:hover:bg-primary-900/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <ArrowDownRight className="h-4 w-4" />
-                            Download PDF
+                            {downloading === report.id ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>
+                                    Generating...
+                                </>
+                            ) : (
+                                <>
+                                    <ArrowDownRight className="h-4 w-4" />
+                                    Download PDF
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>

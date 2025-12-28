@@ -19,12 +19,7 @@ const statusColors: Record<string, { bg: string; border: string; text: string }>
         border: 'border-l-amber-500',
         text: 'text-amber-800 dark:text-amber-200'
     },
-    Confirmed: {
-        bg: 'bg-blue-100 dark:bg-blue-900/40',
-        border: 'border-l-blue-500',
-        text: 'text-blue-800 dark:text-blue-200'
-    },
-    InService: {
+    InProgress: {
         bg: 'bg-purple-100 dark:bg-purple-900/40',
         border: 'border-l-purple-500',
         text: 'text-purple-800 dark:text-purple-200'
@@ -38,11 +33,6 @@ const statusColors: Record<string, { bg: string; border: string; text: string }>
         bg: 'bg-red-100 dark:bg-red-900/40',
         border: 'border-l-red-500',
         text: 'text-red-800 dark:text-red-200'
-    },
-    NoShow: {
-        bg: 'bg-gray-100 dark:bg-gray-700/40',
-        border: 'border-l-gray-500',
-        text: 'text-gray-800 dark:text-gray-200'
     },
 };
 
@@ -71,17 +61,14 @@ export default function WeeklyCalendarView({
         return () => clearInterval(interval);
     }, []);
 
-    // Get the week's dates (Monday to Sunday)
+    // Get the week's dates (starting from today, for 7 days)
     const weekDates = useMemo(() => {
         const dates: Date[] = [];
-        const startOfWeek = new Date(currentDate);
-        const day = startOfWeek.getDay();
-        const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
-        startOfWeek.setDate(diff);
+        const startDate = new Date(currentDate);
 
         for (let i = 0; i < 7; i++) {
-            const date = new Date(startOfWeek);
-            date.setDate(startOfWeek.getDate() + i);
+            const date = new Date(startDate);
+            date.setDate(startDate.getDate() + i);
             dates.push(date);
         }
         return dates;
@@ -139,6 +126,33 @@ export default function WeeklyCalendarView({
         });
 
         return columns;
+    };
+
+    // Determine if appointment should blink
+    const shouldBlinkAppointment = (appointment: any) => {
+        const status = appointment.status;
+
+        // Always blink cancelled
+        if (status === 'Cancelled') {
+            return 'appointment-blink-danger';
+        }
+
+        // Blink Pending appointments approaching time (within 15 minutes)
+        if (status === 'Pending') {
+            const [hours, minutes] = appointment.start_time.split(':').map(Number);
+            const aptTime = new Date();
+            aptTime.setHours(hours, minutes, 0, 0);
+
+            const now = new Date();
+            const minutesUntil = (aptTime.getTime() - now.getTime()) / (1000 * 60);
+
+            // Blink if appointment is within 15 minutes and hasn't passed
+            if (minutesUntil > 0 && minutesUntil <= 15) {
+                return 'appointment-blink-warning';
+            }
+        }
+
+        return '';
     };
 
     // Check if date is today
@@ -322,13 +336,14 @@ export default function WeeklyCalendarView({
                                                     const colors = statusColors[apt.status] || statusColors.Pending;
                                                     const width = 100 / totalColumns;
                                                     const left = colIndex * width;
+                                                    const blinkClass = shouldBlinkAppointment(apt);
 
                                                     return (
                                                         <motion.div
                                                             key={apt.id}
                                                             initial={{ opacity: 0, scale: 0.95 }}
                                                             animate={{ opacity: 1, scale: 1 }}
-                                                            className={`absolute pointer-events-auto cursor-pointer rounded-lg border-l-4 ${colors.bg} ${colors.border} ${colors.text} shadow-sm hover:shadow-md transition-all hover:z-30`}
+                                                            className={`absolute pointer-events-auto cursor-pointer rounded-lg border-l-4 ${colors.bg} ${colors.border} ${colors.text} shadow-sm hover:shadow-md transition-all hover:z-30 ${blinkClass}`}
                                                             style={{
                                                                 top: top + 2,
                                                                 height: height - 4,

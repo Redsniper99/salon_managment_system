@@ -22,6 +22,8 @@ import {
     Target,
     Megaphone,
     LucideIcon,
+    Gift,
+    Package,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -58,6 +60,12 @@ const navItems: NavItem[] = [
         allowedRoles: ['Owner', 'Manager'],
     },
     {
+        label: 'Inventory',
+        href: '/inventory',
+        icon: Package,
+        allowedRoles: ['Owner', 'Manager'],
+    },
+    {
         label: 'Staff',
         href: '/staff',
         icon: Users,
@@ -85,6 +93,12 @@ const navItems: NavItem[] = [
         label: 'Promo Codes',
         href: '/promos',
         icon: Tag,
+        allowedRoles: ['Owner', 'Manager'],
+    },
+    {
+        label: 'Loyalty Program',
+        href: '/loyalty',
+        icon: Gift,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
