@@ -159,11 +159,25 @@ export default function AppointmentDetailsModal({
                         <FileText className="h-5 w-5 text-primary-600 dark:text-primary-400 mt-0.5" />
                         <div className="flex-1">
                             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Services</p>
-                            <p className="text-gray-900 dark:text-white">
-                                {Array.isArray(appointment.services)
-                                    ? `${appointment.services.length} service(s) selected`
-                                    : 'No services specified'}
-                            </p>
+                            {appointment.service_names && appointment.service_names.length > 0 ? (
+                                <div className="space-y-1 mt-1">
+                                    {appointment.service_names.map((name: string, index: number) => (
+                                        <p key={index} className="text-gray-900 dark:text-white font-semibold">
+                                            • {name}
+                                        </p>
+                                    ))}
+                                </div>
+                            ) : appointment.service_name ? (
+                                <p className="text-gray-900 dark:text-white font-semibold mt-1">
+                                    • {appointment.service_name}
+                                </p>
+                            ) : (
+                                <p className="text-gray-500 dark:text-gray-400 mt-1">
+                                    {Array.isArray(appointment.services)
+                                        ? `${appointment.services.length} service(s) - Names not available`
+                                        : 'No services specified'}
+                                </p>
+                            )}
                         </div>
                     </div>
 

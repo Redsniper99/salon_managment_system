@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Loader, AlertCircle } from 'lucide-react';
+import { Clock, Loader, AlertCircle, AlertTriangle } from 'lucide-react';
 import { schedulingService } from '@/services/scheduling';
+import { validateAppointmentSlot } from '@/lib/appointment-validation';
 
 interface TimeSlot {
     time: string;
@@ -18,6 +19,8 @@ interface TimeSlotPickerProps {
     onSelect: (time: string) => void;
     selectedTime?: string;
     previousBookingTime?: string; // Previously selected time for sequential booking hint
+    customerId?: string; // For validation
+    showValidation?: boolean; // Enable real-time validation
 }
 
 export default function TimeSlotPicker({
@@ -26,16 +29,48 @@ export default function TimeSlotPicker({
     serviceDuration,
     onSelect,
     selectedTime,
-    previousBookingTime
+    previousBookingTime,
+    customerId,
+    showValidation = false
 }: TimeSlotPickerProps) {
     const [slots, setSlots] = useState<TimeSlot[]>([]);
     const [loading, setLoading] = useState(false);
+    const [validationWarning, setValidationWarning] = useState<string | null>(null);
 
     useEffect(() => {
         if (stylistId && date && serviceDuration) {
             fetchTimeSlots();
         }
     }, [stylistId, date, serviceDuration]);
+
+    // Validate selected time
+    useEffect(() => {
+        if (showValidation && customerId && stylistId && date && selectedTime) {
+            checkValidation();
+        }
+    }, [selectedTime, showValidation, customerId, stylistId, date]);
+
+    const checkValidation = async () => {
+        if (!customerId || !selectedTime) return;
+
+        try {
+            const result = await validateAppointmentSlot({
+                stylistId,
+                customerId,
+                date,
+                startTime: selectedTime,
+                duration: serviceDuration
+            });
+
+            if (!result.isValid) {
+                setValidationWarning(result.reason || 'Scheduling conflict detected');
+            } else {
+                setValidationWarning(null);
+            }
+        } catch (error) {
+            console.error('Validation error:', error);
+        }
+    };
 
     const fetchTimeSlots = async () => {
         setLoading(true);
@@ -99,6 +134,25 @@ export default function TimeSlotPicker({
 
     return (
         <div className="space-y-4">
+            {/* Validation Warning */}
+            {validationWarning && (
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex items-start gap-2"
+                >
+                    <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                            Scheduling Conflict
+                        </p>
+                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                            {validationWarning}
+                        </p>
+                    </div>
+                </motion.div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

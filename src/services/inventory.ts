@@ -43,10 +43,14 @@ export const inventoryService = {
             .from('inventory')
             .select('*')
             .eq('is_active', true)
-            .lte('current_stock', supabase.rpc('current_stock'))
             .order('current_stock', { ascending: true });
 
-        // Manual filtering since RLS might limit direct comparison
+        if (error) {
+            console.error('Error fetching low stock products:', error);
+            return [];
+        }
+
+        // Filter products where current stock is at or below minimum level
         const products = data as InventoryProduct[];
         return products?.filter(p => p.current_stock <= p.min_stock_level) || [];
     },

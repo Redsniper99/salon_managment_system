@@ -401,5 +401,141 @@ export const notificationsService = {
             console.error('Error sending notification:', error.message || error);
             throw error;
         }
+    },
+
+    /**
+     * Send batched notifications for multiple appointments created together
+     * Reduces SMS cost by sending one message per recipient instead of multiple
+     */
+    async sendBatchedAppointmentNotifications(
+        appointments: any[],
+        type: 'created' | 'updated' = 'created'
+    ) {
+        try {
+            if (appointments.length === 0) return { success: true, message: 'No appointments to notify' };
+
+            // If only one appointment, use regular notification
+            if (appointments.length === 1) {
+                console.log('Single appointment - using regular notification');
+                return { success: true, message: 'Use regular notification for single appointment' };
+            }
+
+            const results: any = {
+                customer: null,
+                stylists: {},
+                manager: null
+            };
+
+            // Get customer details (all appointments should have same customer)
+            const customerId = appointments[0].customer_id;
+            const { data: customer } = await supabase
+                .from('customers')
+                .select('name, phone, email')
+                .eq('id', customerId)
+                .single();
+
+            if (!customer) {
+                throw new Error('Customer not found');
+            }
+
+            // Send batched customer notification
+            if (customer.phone) {
+                const actionWord = type === 'created' ? 'booked' : 'updated';
+                let message = `Hi ${customer.name}, you have ${appointments.length} appointments ${actionWord}:\n`;
+
+                appointments.forEach((apt, index) => {
+                    const aptDate = new Date(apt.appointment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    message += `${index + 1}. ${apt.service_name} - ${aptDate}, ${apt.start_time}`;
+                    if (apt.stylist_name) {
+                        message += ` with ${apt.stylist_name}`;
+                    }
+                    message += '\n';
+                });
+
+                const totalPrice = appointments.reduce((sum, apt) => sum + (apt.service_price || 0), 0);
+                message += `\nTotal: Rs ${totalPrice.toLocaleString()}\nSee you soon!`;
+
+                try {
+                    results.customer = await this.sendSMS(customer.phone, message);
+                } catch (error) {
+                    console.error('Failed to send customer SMS:', error);
+                }
+            }
+
+            // Group appointments by stylist and send batched notifications
+            const appointmentsByStylist = appointments.reduce((acc: any, apt) => {
+                if (apt.stylist_id) {
+                    if (!acc[apt.stylist_id]) {
+                        acc[apt.stylist_id] = {
+                            stylist_id: apt.stylist_id,
+                            stylist_name: apt.stylist_name,
+                            stylist_phone: apt.stylist_phone,
+                            appointments: []
+                        };
+                    }
+                    acc[apt.stylist_id].appointments.push(apt);
+                }
+                return acc;
+            }, {});
+
+            // Send notification to each stylist
+            for (const [stylistId, data] of Object.entries(appointmentsByStylist) as [string, any][]) {
+                if (data.stylist_phone) {
+                    const actionWord = type === 'created' ? 'new' : 'updated';
+                    let message = `You have ${data.appointments.length} ${actionWord} appointments:\n`;
+
+                    data.appointments.forEach((apt: any, index: number) => {
+                        const aptDate = new Date(apt.appointment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        message += `${index + 1}. ${apt.service_name} for ${customer.name} - ${aptDate}, ${apt.start_time}\n`;
+                    });
+
+                    try {
+                        results.stylists[stylistId] = await this.sendSMS(data.stylist_phone, message);
+                    } catch (error) {
+                        console.error(`Failed to send stylist SMS to ${data.stylist_name}:`, error);
+                    }
+                }
+            }
+
+            // Send batched manager notification (if there's a branch manager)
+            const branchId = appointments[0].branch_id;
+            if (branchId) {
+                const { data: managers } = await supabase
+                    .from('staff')
+                    .select('phone, name')
+                    .eq('branch_id', branchId)
+                    .eq('role', 'Manager')
+                    .eq('is_active', true);
+
+                if (managers && managers.length > 0) {
+                    const manager = managers[0];
+                    const actionWord = type === 'created' ? 'booked' : 'updated';
+                    const totalRevenue = appointments.reduce((sum, apt) => sum + (apt.service_price || 0), 0);
+
+                    let message = `${appointments.length} appointments ${actionWord} for ${customer.name}:\n`;
+                    message += `Total services: ${appointments.length}\n`;
+                    message += `Total revenue: Rs ${totalRevenue.toLocaleString()}`;
+
+                    try {
+                        results.manager = await this.sendSMS(manager.phone, message);
+                    } catch (error) {
+                        console.error('Failed to send manager SMS:', error);
+                    }
+                }
+            }
+
+            return {
+                success: true,
+                message: `Batched notifications sent for ${appointments.length} appointments`,
+                results,
+                savedSMS: (appointments.length - 1) * 3 // Shows how many SMS were saved
+            };
+        } catch (error: any) {
+            console.error('Error sending batched notifications:', error);
+            return {
+                success: false,
+                error: error.message || 'Failed to send batched notifications'
+            };
+        }
     }
 };

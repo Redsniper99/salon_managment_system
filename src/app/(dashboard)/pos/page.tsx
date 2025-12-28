@@ -127,10 +127,18 @@ export default function POSPage() {
                 .eq('is_active', true)
                 .gte('valid_until', now);
 
-            if (error) throw error;
+            if (error) {
+                // If table doesn't exist or other error, silently set empty array
+                console.warn('Coupons feature not available:', error.message);
+                setAvailableCoupons([]);
+                return;
+            }
+
             setAvailableCoupons(data || []);
         } catch (error) {
-            console.error('Error fetching coupons:', error);
+            // Silently handle - coupons are optional
+            console.warn('Coupons not configured');
+            setAvailableCoupons([]);
         }
     };
 

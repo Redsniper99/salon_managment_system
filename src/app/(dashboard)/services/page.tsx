@@ -141,21 +141,42 @@ export default function ServicesPage() {
                 </div>
 
                 {/* Category Filters */}
-                <div className="flex gap-2 mt-4 overflow-x-auto">
-                    {categories.map((category) => (
-                        <button
-                            key={category}
-                            onClick={() => setSelectedCategory(category)}
-                            className={cn(
-                                'px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200',
-                                selectedCategory === category
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                            )}
-                        >
-                            {category}
-                        </button>
-                    ))}
+                <div className="mt-4">
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                        Filter by Category
+                    </label>
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                        {categories.map((category) => {
+                            const count = category === 'All'
+                                ? services.length
+                                : services.filter(s => s.category === category).length;
+
+                            return (
+                                <button
+                                    key={category}
+                                    onClick={() => setSelectedCategory(category)}
+                                    className={cn(
+                                        'px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200 flex items-center gap-2 border-2',
+                                        selectedCategory === category
+                                            ? 'bg-primary-600 dark:bg-primary-700 text-white border-primary-600 dark:border-primary-700 shadow-md'
+                                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    )}
+                                >
+                                    <span>{category}</span>
+                                    {count > 0 && (
+                                        <span className={cn(
+                                            'px-2 py-0.5 rounded-full text-xs font-semibold',
+                                            selectedCategory === category
+                                                ? 'bg-white/20 text-white'
+                                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                                        )}>
+                                            {count}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 

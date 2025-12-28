@@ -281,9 +281,19 @@ export default function AppointmentsPage() {
                                                 <p className="text-sm text-gray-600 dark:text-gray-400">
                                                     {formatTime(appointment.start_time)} • {appointment.duration} min • {appointment.stylist?.name || 'Stylist'}
                                                 </p>
-                                                <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
-                                                    Services: {Array.isArray(appointment.services) ? appointment.services.length : 0} selected
-                                                </p>
+                                                {appointment.service_names && appointment.service_names.length > 0 ? (
+                                                    <p className="text-sm text-gray-900 dark:text-gray-100 mt-1 font-medium">
+                                                        {appointment.service_names.join(', ')}
+                                                    </p>
+                                                ) : appointment.service_name ? (
+                                                    <p className="text-sm text-gray-900 dark:text-gray-100 mt-1 font-medium">
+                                                        {appointment.service_name}
+                                                    </p>
+                                                ) : (
+                                                    <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                                                        {Array.isArray(appointment.services) ? `${appointment.services.length} service(s)` : 'No services'}
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

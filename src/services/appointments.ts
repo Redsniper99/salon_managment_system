@@ -65,6 +65,33 @@ export const appointmentsService = {
         const { data, error } = await query;
 
         if (error) throw error;
+
+        // Fetch service names for each appointment
+        if (data && data.length > 0) {
+            const appointmentsWithServices = await Promise.all(
+                data.map(async (appointment) => {
+                    if (appointment.services && Array.isArray(appointment.services) && appointment.services.length > 0) {
+                        const { data: services } = await supabase
+                            .from('services')
+                            .select('id, name')
+                            .in('id', appointment.services);
+
+                        return {
+                            ...appointment,
+                            service_names: services?.map(s => s.name) || [],
+                            service_name: services?.[0]?.name || null
+                        };
+                    }
+                    return {
+                        ...appointment,
+                        service_names: [],
+                        service_name: null
+                    };
+                })
+            );
+            return appointmentsWithServices;
+        }
+
         return data;
     },
 
@@ -83,7 +110,26 @@ export const appointmentsService = {
             .single();
 
         if (error) throw error;
-        return data;
+
+        // Fetch service names
+        if (data && data.services && Array.isArray(data.services) && data.services.length > 0) {
+            const { data: services } = await supabase
+                .from('services')
+                .select('id, name')
+                .in('id', data.services);
+
+            return {
+                ...data,
+                service_names: services?.map(s => s.name) || [],
+                service_name: services?.[0]?.name || null
+            };
+        }
+
+        return {
+            ...data,
+            service_names: [],
+            service_name: null
+        };
     },
 
     /**
@@ -99,6 +145,21 @@ export const appointmentsService = {
         duration: number;
         notes?: string;
     }) {
+        // Validate appointment slot before creating
+        const { validateAppointmentSlot } = await import('@/lib/appointment-validation');
+
+        const validation = await validateAppointmentSlot({
+            stylistId: appointment.stylist_id,
+            customerId: appointment.customer_id,
+            date: appointment.appointment_date,
+            startTime: appointment.start_time,
+            duration: appointment.duration
+        });
+
+        if (!validation.isValid) {
+            throw new Error(validation.reason || 'Cannot book this time slot');
+        }
+
         const { data, error } = await supabase
             .from('appointments')
             .insert({
@@ -152,7 +213,24 @@ export const appointmentsService = {
         duration: number;
         notes?: string;
     }>) {
-        // Insert all appointments
+        // Validate ALL appointments before creating ANY
+        const { validateMultipleAppointments } = await import('@/lib/appointment-validation');
+
+        const batchValidation = await validateMultipleAppointments(
+            appointments.map(apt => ({
+                stylistId: apt.stylist_id,
+                customerId: apt.customer_id,
+                date: apt.appointment_date,
+                startTime: apt.start_time,
+                duration: apt.duration
+            }))
+        );
+
+        if (!batchValidation.allValid) {
+            throw new Error(batchValidation.firstError || 'One or more appointments have scheduling conflicts');
+        }
+
+        // All validations passed - proceed with creation
         const { data, error } = await supabase
             .from('appointments')
             .insert(
