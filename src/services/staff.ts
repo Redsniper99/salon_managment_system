@@ -128,6 +128,8 @@ export const staffService = {
         specializations?: string[];
         working_days?: string[];
         working_hours?: { start: string; end: string };
+        salary?: number;
+        commission?: number;
     }): Promise<{ success: boolean; message: string; credentials?: { email: string; password: string } }> {
         return await createStaffAction(staffData);
     },
@@ -143,6 +145,8 @@ export const staffService = {
         specializations?: string[];
         working_days?: string[];
         working_hours?: { start: string; end: string };
+        salary?: number;
+        commission?: number;
     }): Promise<{ success: boolean; message: string }> {
         try {
             console.log('Updating staff via API:', id, updates);
