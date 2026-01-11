@@ -54,33 +54,52 @@ export async function POST(req: NextRequest) {
         const body = JSON.parse(rawBody);
         const supabase = getAdminClient();
 
-        console.log('📩 WhatsApp Webhook received');
+        console.log('📩 WhatsApp Webhook received:', JSON.stringify(body, null, 2));
 
         const entry = body.entry?.[0];
         const changes = entry?.changes?.[0];
         const value = changes?.value;
         const message = value?.messages?.[0];
 
+        console.log('📨 Extracted message:', message ? JSON.stringify(message, null, 2) : 'NONE');
+
         if (message) {
             const from = message.from;
             const text = message.text?.body || message.interactive?.list_reply?.title || message.interactive?.button_reply?.title || '';
 
-            if (!text) return NextResponse.json({ success: true });
+            if (!text) {
+                console.log('⏭️ Skipping non-text message');
+                return NextResponse.json({ success: true });
+            }
 
             console.log(`📱 From: ${from} | Msg: ${text}`);
 
+            // 0. Check Environment
+            const googleKey = process.env.GOOGLE_AI_API_KEY;
+            const waToken = process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_API_TOKEN;
+            const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+            if (!googleKey) console.warn('⚠️ GOOGLE_AI_API_KEY is missing');
+            if (!waToken) console.warn('⚠️ WHATSAPP_ACCESS_TOKEN/WHATSAPP_API_TOKEN is missing');
+            if (!phoneId) console.warn('⚠️ WHATSAPP_PHONE_NUMBER_ID is missing');
+
             // 1. Get Conversation History
+            console.log('⏳ Fetching history...');
             const history = await conversationManager.getHistory(from);
+            console.log(`✅ History fetched: ${history.length} messages`);
 
             // 2. Start Gemini Chat
+            console.log('🔮 Starting Gemini chat...');
             const chat = geminiModel.startChat({
                 history: history,
                 tools: tools as any,
             });
 
             // 4. Send Message to Gemini
+            console.log('✉️ Sending message to Gemini...');
             const result = await chat.sendMessage(text);
             let response = result.response;
+            console.log('🤖 Gemini responded');
 
             // 5. Handle Function Calls (Loops if multiple calls)
             let callCount = 0;
@@ -91,6 +110,7 @@ export async function POST(req: NextRequest) {
                 for (const part of parts) {
                     if (part.functionCall) {
                         const { name, args } = part.functionCall;
+                        console.log(`🛠️ AI calling function: ${name}`);
                         const functionResult = await handleFunctionCall(name, args, from);
                         toolResults.push({
                             functionResponse: {
@@ -109,13 +129,18 @@ export async function POST(req: NextRequest) {
             }
 
             const finalAiText = response.text();
+            console.log('📝 Final AI Text prepared');
 
             // 6. Send Response to WhatsApp
-            await sendWhatsAppMessage(from, createTextMessage(finalAiText));
+            console.log('🚀 Sending WhatsApp reply...');
+            const waResult = await sendWhatsAppMessage(from, createTextMessage(finalAiText));
+            console.log('📬 WhatsApp Send Result:', waResult ? 'SUCCESS' : 'FAILED');
 
             // 7. Save History
+            console.log('💾 Saving history...');
             await conversationManager.saveMessage(from, 'user', text);
             await conversationManager.saveMessage(from, 'model', finalAiText);
+            console.log('✨ Done!');
         }
 
         return NextResponse.json({ success: true });
