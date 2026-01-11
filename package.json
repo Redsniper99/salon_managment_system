@@ -10,6 +10,7 @@
     "cron": "tsx scripts/social-media-cron.ts"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.85.0",
     "@types/node-cron": "^3.0.11",
     "clsx": "^2.1.1",
