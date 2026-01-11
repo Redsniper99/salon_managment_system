@@ -2,7 +2,7 @@
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v17.0';
 
 export async function sendWhatsAppMessage(to: string, message: any) {
-    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    const token = process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_API_TOKEN;
     const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
     console.log('📤 Sending WhatsApp message to:', to);
