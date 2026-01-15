@@ -115,7 +115,9 @@ export async function POST(req: NextRequest) {
                         toolResults.push({
                             functionResponse: {
                                 name,
-                                response: functionResult
+                                response: {
+                                    result: functionResult
+                                }
                             }
                         });
                     }
