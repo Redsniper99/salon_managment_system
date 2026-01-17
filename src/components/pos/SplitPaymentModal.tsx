@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { PaymentMethod, PaymentBreakdown } from '@/lib/types';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
-import { Banknote, CreditCard, Building, Smartphone, DollarSign } from 'lucide-react';
+import { Banknote, CreditCard, Building, DollarSign } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 interface SplitPaymentModalProps {
@@ -17,7 +17,6 @@ const paymentMethodIcons: Record<PaymentMethod, any> = {
     'Cash': Banknote,
     'Card': CreditCard,
     'BankTransfer': Building,
-    'UPI': Smartphone,
     'Other': DollarSign
 };
 
@@ -45,7 +44,7 @@ export default function SplitPaymentModal({ total, onConfirm, onCancel }: SplitP
 
     const addPaymentMethod = () => {
         if (payments.length < 4) { // Max 4 payment methods
-            setPayments([...payments, { method: 'UPI', amount: 0 }]);
+            setPayments([...payments, { method: 'Other', amount: 0 }]);
         }
     };
 
@@ -85,7 +84,6 @@ export default function SplitPaymentModal({ total, onConfirm, onCancel }: SplitP
                                         <option value="Cash">💵 Cash</option>
                                         <option value="Card">💳 Card</option>
                                         <option value="BankTransfer">🏦 Bank Transfer</option>
-                                        <option value="UPI">📱 UPI </option>
                                         <option value="Other">💰 Other</option>
                                     </select>
                                 </div>

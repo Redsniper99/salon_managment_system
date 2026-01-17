@@ -191,7 +191,6 @@ export const reportsService = {
             totalCash: paymentTotals.totalCash,
             totalCard: paymentTotals.totalCard,
             totalBankTransfer: paymentTotals.totalBankTransfer,
-            totalUPI: paymentTotals.totalUPI,
             totalOther: paymentTotals.totalOther,
             splitPaymentCount: paymentTotals.splitPaymentCount,
             // Legacy format for backward compatibility
@@ -199,7 +198,6 @@ export const reportsService = {
                 { method: 'Cash', amount: paymentTotals.totalCash, count: 0 },
                 { method: 'Card', amount: paymentTotals.totalCard, count: 0 },
                 { method: 'Bank Transfer', amount: paymentTotals.totalBankTransfer, count: 0 },
-                { method: 'UPI', amount: paymentTotals.totalUPI, count: 0 },
                 { method: 'Other', amount: paymentTotals.totalOther, count: 0 }
             ].filter(p => p.amount > 0),
             byService: Object.entries(byService)

@@ -11,7 +11,6 @@ interface SalesReportData {
     totalCash: number;
     totalCard: number;
     totalBankTransfer: number;
-    totalUPI: number;
     totalOther: number;
     splitPaymentCount: number;
     byService: Array<{ service: string; revenue: number; count: number }>;
@@ -41,7 +40,6 @@ export function exportSalesReportToExcel(data: SalesReportData) {
         ['Cash', data.totalCash],
         ['Card', data.totalCard],
         ['Bank Transfer', data.totalBankTransfer],
-        ['UPI', data.totalUPI],
         ['Other', data.totalOther],
         ['Split Transactions', data.splitPaymentCount],
     ];

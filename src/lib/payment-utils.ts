@@ -8,14 +8,12 @@ export function calculatePaymentTotals(invoices: any[]): {
     totalCash: number;
     totalCard: number;
     totalBankTransfer: number;
-    totalUPI: number;
     totalOther: number;
     splitPaymentCount: number;
 } {
     let totalCash = 0;
     let totalCard = 0;
     let totalBankTransfer = 0;
-    let totalUPI = 0;
     let totalOther = 0;
     let splitPaymentCount = 0;
 
@@ -34,9 +32,6 @@ export function calculatePaymentTotals(invoices: any[]): {
                         break;
                     case 'BankTransfer':
                         totalBankTransfer += payment.amount;
-                        break;
-                    case 'UPI':
-                        totalUPI += payment.amount;
                         break;
                     default:
                         totalOther += payment.amount;
@@ -57,9 +52,6 @@ export function calculatePaymentTotals(invoices: any[]): {
                 case 'BankTransfer':
                     totalBankTransfer += total;
                     break;
-                case 'UPI':
-                    totalUPI += total;
-                    break;
                 default:
                     totalOther += total;
             }
@@ -70,7 +62,6 @@ export function calculatePaymentTotals(invoices: any[]): {
         totalCash,
         totalCard,
         totalBankTransfer,
-        totalUPI,
         totalOther,
         splitPaymentCount
     };
