@@ -5,7 +5,7 @@ export interface Message {
     parts: { text: string }[];
 }
 
-const HISTORY_LIMIT = 20; // Keep last 20 messages for context
+const HISTORY_LIMIT = 8; // Keep last 8 messages for context (optimized for token usage)
 
 export const conversationManager = {
     async getHistory(phoneNumber: string): Promise<Message[]> {
