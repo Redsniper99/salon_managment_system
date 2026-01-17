@@ -16,6 +16,7 @@ interface ServiceSlotMapperProps {
     selectedTime?: string;
     branchId?: string;
     previousBookingTime?: string; // For showing the last selected time when same stylist
+    occupiedSlots?: string[]; // Time slots already selected by other services
 }
 
 export default function ServiceSlotMapper({
@@ -26,7 +27,8 @@ export default function ServiceSlotMapper({
     selectedStylist,
     selectedTime,
     branchId,
-    previousBookingTime
+    previousBookingTime,
+    occupiedSlots = []
 }: ServiceSlotMapperProps) {
     const [stylists, setStylists] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
@@ -133,6 +135,7 @@ export default function ServiceSlotMapper({
                                 onSelect={handleTimeSelect}
                                 selectedTime={selectedTime}
                                 previousBookingTime={previousBookingTime}
+                                occupiedSlots={occupiedSlots}
                             />
                         </div>
                     )}
@@ -151,6 +154,7 @@ export default function ServiceSlotMapper({
                             onSelect(stylistId, time, stylistName);
                         }}
                         branchId={branchId}
+                        occupiedSlots={occupiedSlots}
                     />
                 </div>
             )}

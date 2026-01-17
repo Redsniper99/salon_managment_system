@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, Edit, Trash2, X, Check, Loader, Copy, AlertCircle, Sparkles } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, X, Check, Loader, Copy, AlertCircle, Sparkles, DollarSign } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
 import PhoneInput from '@/components/shared/PhoneInput';
@@ -368,6 +368,15 @@ export default function StaffPage() {
                                         {staff.workingDays.join(', ')}
                                     </p>
                                 )}
+
+                                {/* Commission Badge - Only for Stylists */}
+                                {staff.role === 'Stylist' && staff.commission !== undefined && staff.commission !== null && (
+                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-xs font-semibold">
+                                        <DollarSign className="w-3.5 h-3.5" />
+                                        {staff.commission}% Commission
+                                    </div>
+                                )}
+
                                 {staff.specializations && staff.specializations.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2">
                                         {staff.specializations.slice(0, 3).map((specId) => {
@@ -451,7 +460,17 @@ export default function StaffPage() {
                                     </label>
                                     <select
                                         value={formData.role}
-                                        onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
+                                        onChange={(e) => {
+                                            const newRole = e.target.value as any;
+                                            setFormData({
+                                                ...formData,
+                                                role: newRole,
+                                                // Set default commission when switching to Stylist (only for new staff)
+                                                commission: showAddModal && newRole === 'Stylist' && !formData.commission
+                                                    ? '40'
+                                                    : formData.commission
+                                            });
+                                        }}
                                         className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors text-gray-900 dark:text-white"
                                     >
                                         <option value="Stylist">Stylist</option>
@@ -566,15 +585,24 @@ export default function StaffPage() {
                                         placeholder="e.g., 50000"
                                     />
                                     {formData.role === 'Stylist' && (
-                                        <Input
-                                            label="Commission (%)"
-                                            type="number"
-                                            value={formData.commission}
-                                            onChange={(e) => setFormData({ ...formData, commission: e.target.value })}
-                                            placeholder="e.g., 15"
-                                            min="0"
-                                            max="100"
-                                        />
+                                        <div>
+                                            <Input
+                                                label="Commission Rate (%)"
+                                                type="number"
+                                                value={formData.commission}
+                                                onChange={(e) => setFormData({ ...formData, commission: e.target.value })}
+                                                placeholder="40 (default)"
+                                                min="0"
+                                                max="100"
+                                                step="0.5"
+                                            />
+                                            <div className="mt-1.5 flex items-start gap-1.5 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                                                <DollarSign className="w-3.5 h-3.5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                                                <p className="text-xs text-green-700 dark:text-green-300">
+                                                    Stylists earn this % from service revenue automatically
+                                                </p>
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
 

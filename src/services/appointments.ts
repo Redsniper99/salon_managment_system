@@ -66,29 +66,46 @@ export const appointmentsService = {
 
         if (error) throw error;
 
-        // Fetch service names for each appointment
+        // OPTIMIZED: Fetch all unique service IDs, then fetch all services in ONE query
         if (data && data.length > 0) {
-            const appointmentsWithServices = await Promise.all(
-                data.map(async (appointment) => {
-                    if (appointment.services && Array.isArray(appointment.services) && appointment.services.length > 0) {
-                        const { data: services } = await supabase
-                            .from('services')
-                            .select('id, name')
-                            .in('id', appointment.services);
+            const allServiceIds = new Set<string>();
+            data.forEach(appointment => {
+                if (appointment.services && Array.isArray(appointment.services)) {
+                    appointment.services.forEach((id: string) => allServiceIds.add(id));
+                }
+            });
 
-                        return {
-                            ...appointment,
-                            service_names: services?.map(s => s.name) || [],
-                            service_name: services?.[0]?.name || null
-                        };
-                    }
+            // Single query to fetch all services
+            const serviceIdsArray = Array.from(allServiceIds);
+            const { data: servicesData } = serviceIdsArray.length > 0
+                ? await supabase
+                    .from('services')
+                    .select('id, name')
+                    .in('id', serviceIdsArray)
+                : { data: [] };
+
+            // Create a lookup map for O(1) access
+            const servicesMap = new Map(servicesData?.map((s: any) => [s.id, s]) || []);
+
+            // Map services to appointments
+            const appointmentsWithServices = data.map(appointment => {
+                if (appointment.services && Array.isArray(appointment.services) && appointment.services.length > 0) {
+                    const services = appointment.services
+                        .map((id: string) => servicesMap.get(id))
+                        .filter(Boolean);
+
                     return {
                         ...appointment,
-                        service_names: [],
-                        service_name: null
+                        service_names: services.map((s: any) => s!.name),
+                        service_name: services[0]?.name || null
                     };
-                })
-            );
+                }
+                return {
+                    ...appointment,
+                    service_names: [],
+                    service_name: null
+                };
+            });
             return appointmentsWithServices;
         }
 
@@ -247,28 +264,31 @@ export const appointmentsService = {
 
         if (error) throw error;
 
-        // Send notifications for each appointment
+        // Send ONE consolidated notification for ALL appointments (fire-and-forget)
         if (data && data.length > 0) {
-            for (const appointment of data) {
-                try {
-                    const response = await fetch('/api/appointments/notify', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            type: 'new',
-                            appointmentId: appointment.id
-                        })
-                    });
+            // Collect all appointment IDs
+            const appointmentIds = data.map(apt => apt.id);
+
+            // Send a single batch notification request
+            fetch('/api/appointments/notify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'new',
+                    appointmentIds // Send all IDs at once
+                })
+            })
+                .then(async (response) => {
                     const result = await response.json();
                     if (result.success) {
-                        console.log(`✅ Notification sent for appointment ${appointment.id}`);
+                        console.log(`✅ Consolidated notification sent for ${appointmentIds.length} appointments`);
                     } else {
-                        console.error(`❌ Notification error for ${appointment.id}:`, result.error);
+                        console.error('❌ Batch notification error:', result.error);
                     }
-                } catch (notificationError) {
-                    console.error(`❌ Failed to send notification for ${appointment.id}:`, notificationError);
-                }
-            }
+                })
+                .catch((error) => {
+                    console.error('❌ Failed to send batch notification:', error);
+                });
         }
 
         return data;
@@ -416,26 +436,43 @@ export const appointmentsService = {
         if (error) throw error;
         if (!appointments || appointments.length === 0) return [];
 
-        // Fetch service details for each appointment
-        const appointmentsWithServices = await Promise.all(
-            appointments.map(async (appointment) => {
-                if (appointment.services && appointment.services.length > 0) {
-                    const { data: servicesData } = await supabase
-                        .from('services')
-                        .select('id, name, price, duration')
-                        .in('id', appointment.services);
+        // OPTIMIZED: Collect all service IDs and fetch in one query
+        const allServiceIds = new Set<string>();
+        appointments.forEach(appointment => {
+            if (appointment.services && appointment.services.length > 0) {
+                appointment.services.forEach((id: string) => allServiceIds.add(id));
+            }
+        });
 
-                    return {
-                        ...appointment,
-                        services_data: servicesData || []
-                    };
-                }
+        // Single query for all services
+        const serviceIdsArray = Array.from(allServiceIds);
+        const { data: servicesData } = serviceIdsArray.length > 0
+            ? await supabase
+                .from('services')
+                .select('id, name, price, duration')
+                .in('id', serviceIdsArray)
+            : { data: [] };
+
+        // Create lookup map
+        const servicesMap = new Map(servicesData?.map((s: any) => [s.id, s]) || []);
+
+        // Map services to appointments
+        const appointmentsWithServices = appointments.map(appointment => {
+            if (appointment.services && appointment.services.length > 0) {
+                const services_data = appointment.services
+                    .map((id: string) => servicesMap.get(id))
+                    .filter(Boolean);
+
                 return {
                     ...appointment,
-                    services_data: []
+                    services_data
                 };
-            })
-        );
+            }
+            return {
+                ...appointment,
+                services_data: []
+            };
+        });
 
         return appointmentsWithServices;
     },

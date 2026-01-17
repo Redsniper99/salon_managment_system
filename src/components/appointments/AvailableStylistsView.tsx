@@ -30,6 +30,7 @@ interface AvailableStylistsViewProps {
     date: string;
     onSelect: (stylistId: string, time: string, stylistName: string) => void;
     branchId?: string;
+    occupiedSlots?: string[]; // Time slots already selected by other services
 }
 
 export default function AvailableStylistsView({
@@ -38,7 +39,8 @@ export default function AvailableStylistsView({
     serviceDuration,
     date,
     onSelect,
-    branchId
+    branchId,
+    occupiedSlots = []
 }: AvailableStylistsViewProps) {
     const [loading, setLoading] = useState(true);
     const [stylistsWithSlots, setStylistsWithSlots] = useState<StylistWithSlots[]>([]);
@@ -120,6 +122,10 @@ export default function AvailableStylistsView({
                 return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 cursor-not-allowed border border-yellow-300 dark:border-yellow-700';
             }
             return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 cursor-not-allowed border border-red-300 dark:border-red-700';
+        }
+        // Check if slot is occupied by another service
+        if (occupiedSlots.includes(slot.time)) {
+            return 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 ring-2 ring-orange-400 dark:ring-orange-500 cursor-pointer border border-orange-300 dark:border-orange-700 opacity-75';
         }
         if (selectedStylist === stylistId && selectedTime === slot.time) {
             return 'bg-primary-600 text-white ring-2 ring-primary-400 shadow-lg shadow-primary-500/30';
@@ -203,6 +209,12 @@ export default function AvailableStylistsView({
                     <div className="w-4 h-4 bg-yellow-100 dark:bg-yellow-900/30 rounded border border-yellow-300 dark:border-yellow-700" />
                     <span className="text-gray-700 dark:text-gray-300">Break</span>
                 </div>
+                {occupiedSlots.length > 0 && (
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 bg-orange-100 dark:bg-orange-900/30 rounded border border-orange-300 dark:border-orange-700 ring-2 ring-orange-400" />
+                        <span className="text-gray-700 dark:text-gray-300">Other Service</span>
+                    </div>
+                )}
             </div>
 
             {/* Stylist Cards */}
@@ -228,8 +240,8 @@ export default function AvailableStylistsView({
                                 {/* Stylist Info */}
                                 <div className="flex items-start gap-3 mb-3">
                                     <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg ${stylist.id === 'NO_PREFERENCE'
-                                            ? 'bg-gradient-to-br from-indigo-400 to-indigo-600'
-                                            : 'bg-gradient-to-br from-primary-400 to-primary-600'
+                                        ? 'bg-gradient-to-br from-indigo-400 to-indigo-600'
+                                        : 'bg-gradient-to-br from-primary-400 to-primary-600'
                                         }`}>
                                         {stylist.id === 'NO_PREFERENCE' ? <Sparkles className="w-6 h-6" /> : stylist.name.charAt(0)}
                                     </div>

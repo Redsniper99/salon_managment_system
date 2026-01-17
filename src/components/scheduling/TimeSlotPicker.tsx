@@ -21,6 +21,7 @@ interface TimeSlotPickerProps {
     previousBookingTime?: string; // Previously selected time for sequential booking hint
     customerId?: string; // For validation
     showValidation?: boolean; // Enable real-time validation
+    occupiedSlots?: string[]; // Time slots already selected by other services
 }
 
 export default function TimeSlotPicker({
@@ -31,7 +32,8 @@ export default function TimeSlotPicker({
     selectedTime,
     previousBookingTime,
     customerId,
-    showValidation = false
+    showValidation = false,
+    occupiedSlots = []
 }: TimeSlotPickerProps) {
     const [slots, setSlots] = useState<TimeSlot[]>([]);
     const [loading, setLoading] = useState(false);
@@ -96,6 +98,10 @@ export default function TimeSlotPicker({
                 return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 cursor-not-allowed';
             }
             return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 cursor-not-allowed';
+        }
+        // Check if slot is occupied by another service
+        if (occupiedSlots.includes(slot.time)) {
+            return 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 ring-2 ring-orange-400 dark:ring-orange-500 cursor-pointer opacity-75';
         }
         if (selectedTime === slot.time) {
             return 'bg-primary-600 text-white ring-2 ring-primary-400';
@@ -180,6 +186,12 @@ export default function TimeSlotPicker({
                     <div className="w-4 h-4 bg-yellow-100 dark:bg-yellow-900/30 rounded border border-yellow-300 dark:border-yellow-700" />
                     <span className="text-gray-700 dark:text-gray-300">Break</span>
                 </div>
+                {occupiedSlots.length > 0 && (
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 bg-orange-100 dark:bg-orange-900/30 rounded border border-orange-300 dark:border-orange-700 ring-2 ring-orange-400" />
+                        <span className="text-gray-700 dark:text-gray-300">Other Service</span>
+                    </div>
+                )}
             </div>
 
             {/* Time Slots Grid */}

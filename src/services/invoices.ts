@@ -3,9 +3,6 @@ import { earningsService } from './earnings';
 import { getLocalDateString } from '@/lib/utils';
 
 export const invoicesService = {
-    /**
-     * Create a new invoice (supports multiple appointments)
-     */
     async createInvoice(invoice: {
         customer_id: string;
         branch_id: string;
@@ -26,13 +23,39 @@ export const invoicesService = {
         tax: number;
         total: number;
         payment_method: string;
+        payment_breakdown?: Array<{ method: string; amount: number }>; // NEW: Split payment support
         created_by: string;
     }) {
+        // Validate payment breakdown if provided
+        if (invoice.payment_breakdown && invoice.payment_breakdown.length > 0) {
+            const breakdownTotal = invoice.payment_breakdown.reduce((sum, p) => sum + p.amount, 0);
+            // Allow small rounding differences (1 cent)
+            if (Math.abs(breakdownTotal - invoice.total) > 0.01) {
+                throw new Error(`Payment breakdown total (${breakdownTotal}) does not match invoice total (${invoice.total})`);
+            }
+            // Ensure at least 2 payment methods for split
+            if (invoice.payment_breakdown.length < 2) {
+                throw new Error('Split payment requires at least 2 payment methods');
+            }
+            // Ensure all amounts are positive
+            if (invoice.payment_breakdown.some(p => p.amount <= 0)) {
+                throw new Error('All payment amounts must be greater than 0');
+            }
+        }
+
         // For backwards compatibility, use first appointment_id if appointment_ids provided
         const primaryAppointmentId = invoice.appointment_ids?.[0] || invoice.appointment_id;
 
         // Generate invoice number
         const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
+        console.log('💳 Creating invoice:', {
+            invoiceNumber,
+            customer_id: invoice.customer_id,
+            total: invoice.total,
+            payment_method: invoice.payment_method,
+            payment_breakdown: invoice.payment_breakdown
+        });
 
         const { data, error } = await supabase
             .from('invoices')
@@ -48,12 +71,23 @@ export const invoicesService = {
                 tax: invoice.tax,
                 total: invoice.total,
                 payment_method: invoice.payment_method,
-                created_by: invoice.created_by
+                payment_breakdown: invoice.payment_breakdown || null // NEW: Store payment breakdown
             })
             .select()
             .single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('❌ Error creating invoice:', error);
+            throw error;
+        }
+
+        console.log('✅ Invoice created successfully:', {
+            id: data.id,
+            invoice_number: data.invoice_number,
+            total: data.total,
+            created_at: data.created_at,
+            payment_breakdown: data.payment_breakdown
+        });
 
         // Update earnings for all linked appointments
         const appointmentIds = invoice.appointment_ids || (invoice.appointment_id ? [invoice.appointment_id] : []);
@@ -65,8 +99,19 @@ export const invoicesService = {
                     invoice.items,
                     data.id
                 );
-            } catch (earningsError) {
-                console.error('Error updating earnings:', earningsError);
+            } catch (earningsError: any) {
+                console.error('❌ Error updating earnings:');
+                if (earningsError && typeof earningsError === 'object') {
+                    console.error('  Code:', earningsError.code);
+                    console.error('  Message:', earningsError.message);
+                    console.error('  Details:', earningsError.details);
+                    console.error('  Hint:', earningsError.hint);
+                }
+                console.error('Error details:', {
+                    message: earningsError instanceof Error ? earningsError.message : earningsError?.message || 'Unknown error',
+                    appointmentIds,
+                    invoiceId: data.id
+                });
                 // Don't throw - invoice creation succeeded
             }
         }

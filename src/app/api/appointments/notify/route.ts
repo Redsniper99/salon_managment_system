@@ -17,7 +17,8 @@ const supabase = createClient(
  * Request body:
  * {
  *   type: 'new' | 'reschedule' | 'cancel',
- *   appointmentId: string,
+ *   appointmentId?: string,       // For single appointment
+ *   appointmentIds?: string[],    // For batch (multi-service bookings)
  *   oldTime?: string,  // For reschedule
  *   oldDate?: string   // For reschedule
  * }
@@ -25,55 +26,54 @@ const supabase = createClient(
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { type, appointmentId, oldTime, oldDate } = body;
+        const { type, appointmentId, appointmentIds, oldTime, oldDate } = body;
 
-        if (!type || !appointmentId) {
+        // Support both single and batch
+        const idsToProcess = appointmentIds || (appointmentId ? [appointmentId] : []);
+
+        if (!type || idsToProcess.length === 0) {
             return NextResponse.json(
-                { success: false, error: 'Missing type or appointmentId' },
+                { success: false, error: 'Missing type or appointmentId(s)' },
                 { status: 400 }
             );
         }
 
-        // Get appointment details
-        const { data: appointment, error: aptError } = await supabase
+
+        // Get all appointment details
+        const { data: appointments, error: aptError } = await supabase
             .from('appointments')
             .select(`
                 *,
                 customer:customers(*),
                 stylist:staff(*)
             `)
-            .eq('id', appointmentId)
-            .single();
+            .in('id', idsToProcess);
 
-        if (aptError || !appointment) {
+        if (aptError || !appointments || appointments.length === 0) {
             return NextResponse.json(
-                { success: false, error: 'Appointment not found' },
+                { success: false, error: 'Appointments not found' },
                 { status: 404 }
             );
         }
 
-        const customer = appointment.customer as any;
-        const stylist = appointment.stylist as any;
-
-        // Get service names
-        let serviceNames = 'Services';
-        if (appointment.services && appointment.services.length > 0) {
-            const { data: services } = await supabase
-                .from('services')
-                .select('name')
-                .in('id', appointment.services);
-            if (services && services.length > 0) {
-                serviceNames = services.map(s => s.name).join(', ');
+        // Collect unique service IDs for all appointments
+        const allServiceIds = new Set<string>();
+        appointments.forEach(apt => {
+            if (apt.services && apt.services.length > 0) {
+                apt.services.forEach((id: string) => allServiceIds.add(id));
             }
-        }
-
-        const shortDate = new Date(appointment.appointment_date).toLocaleDateString();
-        const fullDate = new Date(appointment.appointment_date).toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
         });
+
+        // Fetch all services in one query
+        const { data: servicesData } = await supabase
+            .from('services')
+            .select('id, name')
+            .in('id', Array.from(allServiceIds));
+
+        const servicesMap = new Map(servicesData?.map((s: any) => [s.id, s.name]) || []);
+
+        // Assume all appointments are for the same customer (multi-service booking)
+        const customer = appointments[0].customer as any;
 
         // Initialize SMS service
         const apiKey = process.env.TEXT_LK_API_KEY;
@@ -88,28 +88,68 @@ export async function POST(request: NextRequest) {
         }
 
         const textlk = createTextLkService(apiKey, senderId);
-        const results: any = { customer: null, stylist: null, managers: [] };
+        const results: any = { customer: null, stylists: [], managers: [] };
 
         if (type === 'new') {
-            // New appointment notifications
+            // Consolidate appointment details for customer
+            const appointmentsList = appointments.map(apt => {
+                const stylist = apt.stylist as any;
+                const serviceNames = apt.services
+                    ?.map((id: string) => servicesMap.get(id))
+                    .filter(Boolean)
+                    .join(', ') || 'Service';
 
-            // Customer SMS
+                return `${serviceNames} at ${apt.start_time} with ${stylist?.name || 'stylist'}`;
+            });
+
+            const shortDate = new Date(appointments[0].appointment_date).toLocaleDateString();
+
+            // Send ONE consolidated SMS to customer
             if (customer?.phone) {
-                const msg = `✅ Appointment Confirmed! ${serviceNames} on ${shortDate} at ${appointment.start_time} with ${stylist?.name || 'our stylist'}. See you soon! - SalonFlow`;
+                const msg = appointments.length === 1
+                    ? `✅ Appointment Confirmed! ${appointmentsList[0]} on ${shortDate}. See you soon! - SalonFlow`
+                    : `✅ ${appointments.length} Appointments Confirmed for ${shortDate}:\n${appointmentsList.map((apt, i) => `${i + 1}. ${apt}`).join('\n')}\nSee you soon! - SalonFlow`;
+
                 const result = await textlk.sendSMS(customer.phone, msg);
                 results.customer = result;
-                console.log('✅ New appointment SMS sent to customer:', customer.phone);
+                console.log(`✅ Consolidated SMS sent to customer (${appointments.length} appointments)`);
             }
 
-            // Stylist SMS
-            if (stylist?.phone) {
-                const msg = `📅 New Appointment! Customer: ${customer?.name || 'Customer'}, Service: ${serviceNames}, Date: ${shortDate} at ${appointment.start_time}. Duration: ${appointment.duration} mins.`;
-                const result = await textlk.sendSMS(stylist.phone, msg);
-                results.stylist = result;
-                console.log('✅ New appointment SMS sent to stylist:', stylist.phone);
+            // Group appointments by stylist and send ONE SMS per stylist
+            const appointmentsByStylist = new Map<string, any[]>();
+            appointments.forEach(apt => {
+                const stylist = apt.stylist as any;
+                if (stylist?.id) {
+                    if (!appointmentsByStylist.has(stylist.id)) {
+                        appointmentsByStylist.set(stylist.id, []);
+                    }
+                    appointmentsByStylist.get(stylist.id)!.push(apt);
+                }
+            });
+
+            // Send consolidated SMS to each stylist
+            for (const [stylistId, stylistAppts] of appointmentsByStylist) {
+                const stylist = stylistAppts[0].stylist as any;
+                if (stylist?.phone) {
+                    const aptDetails = stylistAppts.map((apt: any) => {
+                        const serviceNames = apt.services
+                            ?.map((id: string) => servicesMap.get(id))
+                            .filter(Boolean)
+                            .join(', ') || 'Service';
+                        return `${serviceNames} at ${apt.start_time} (${apt.duration} mins)`;
+                    });
+
+                    const msg = stylistAppts.length === 1
+                        ? `📅 New Appointment! Customer: ${customer?.name || 'Customer'}, ${aptDetails[0]} on ${shortDate}.`
+                        : `📅 ${stylistAppts.length} New Appointments with ${customer?.name || 'Customer'} on ${shortDate}:\n${aptDetails.map((d: any, i: number) => `${i + 1}. ${d}`).join('\n')}`;
+
+                    const result = await textlk.sendSMS(stylist.phone, msg);
+                    results.stylists.push({ name: stylist.name, result });
+                    console.log(`✅ Consolidated SMS sent to stylist ${stylist.name} (${stylistAppts.length} appointments)`);
+                }
             }
 
-            // Manager SMS
+            // Send ONE consolidated SMS to managers
             const { data: managers } = await supabase
                 .from('staff')
                 .select('id, name, phone')
@@ -117,19 +157,38 @@ export async function POST(request: NextRequest) {
                 .eq('is_active', true);
 
             if (managers && managers.length > 0) {
-                const managerMsg = `📅 New Booking! ${customer?.name || 'Customer'} booked ${serviceNames} on ${shortDate} at ${appointment.start_time} with ${stylist?.name || 'stylist'}. - SalonFlow`;
+                const aptSummary = appointments.map(apt => {
+                    const stylist = apt.stylist as any;
+                    const serviceNames = apt.services
+                        ?.map((id: string) => servicesMap.get(id))
+                        .filter(Boolean)
+                        .join(', ') || 'Service';
+                    return `${serviceNames} at ${apt.start_time} with ${stylist?.name}`;
+                });
+
+                const managerMsg = appointments.length === 1
+                    ? `📅 New Booking! ${customer?.name || 'Customer'} booked ${aptSummary[0]} on ${shortDate}. - SalonFlow`
+                    : `📅 ${appointments.length} New Bookings! ${customer?.name || 'Customer'} on ${shortDate}:\n${aptSummary.map((s, i) => `${i + 1}. ${s}`).join('\n')} - SalonFlow`;
 
                 for (const manager of managers) {
                     if (manager.phone) {
                         const result = await textlk.sendSMS(manager.phone, managerMsg);
                         results.managers.push({ name: manager.name, result });
-                        console.log('✅ New appointment SMS sent to manager:', manager.name);
+                        console.log(`✅ Consolidated SMS sent to manager: ${manager.name}`);
                     }
                 }
             }
 
         } else if (type === 'reschedule') {
-            // Reschedule notifications
+            // Reschedule only works for single appointment currently
+            const appointment = appointments[0];
+            const stylist = appointment.stylist as any;
+            const serviceNames = appointment.services
+                ?.map((id: string) => servicesMap.get(id))
+                .filter(Boolean)
+                .join(', ') || 'Services';
+            const shortDate = new Date(appointment.appointment_date).toLocaleDateString();
+
             const oldDateStr = oldDate ? new Date(oldDate).toLocaleDateString() : 'previous date';
             const oldTimeStr = oldTime || 'previous time';
 
@@ -145,7 +204,7 @@ export async function POST(request: NextRequest) {
             if (stylist?.phone) {
                 const msg = `🔄 Appointment Updated! ${customer?.name || 'Customer'}'s ${serviceNames} rescheduled to ${shortDate} at ${appointment.start_time}. Duration: ${appointment.duration} mins.`;
                 const result = await textlk.sendSMS(stylist.phone, msg);
-                results.stylist = result;
+                results.stylists.push({ name: stylist.name, result });
                 console.log('✅ Reschedule SMS sent to stylist:', stylist.phone);
             }
 

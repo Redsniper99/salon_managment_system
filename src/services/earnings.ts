@@ -296,6 +296,8 @@ export const earningsService = {
         invoiceId: string
     ) {
         try {
+            console.log('📊 Starting earnings update for appointments:', appointmentIds);
+
             // Get all appointments with stylist info
             const { data: appointments, error: appointmentsError } = await supabase
                 .from('appointments')
@@ -304,15 +306,25 @@ export const earningsService = {
                     stylist_id,
                     appointment_date,
                     services,
-                    stylist:staff(id, commission)
+                    stylist:staff!stylist_id(id, commission)
                 `)
                 .in('id', appointmentIds);
 
-            if (appointmentsError) throw appointmentsError;
+            if (appointmentsError) {
+                console.error('❌ Error fetching appointments:');
+                console.error('  Code:', appointmentsError.code);
+                console.error('  Message:', appointmentsError.message);
+                console.error('  Details:', appointmentsError.details);
+                console.error('  Hint:', appointmentsError.hint);
+                throw appointmentsError;
+            }
+
             if (!appointments || appointments.length === 0) {
-                console.warn('No appointments found for earnings update');
+                console.warn('⚠️ No appointments found for earnings update');
                 return;
             }
+
+            console.log(`✅ Found ${appointments.length} appointment(s)`);
 
             // Default commission rate (fallback if staff doesn't have one set)
             const DEFAULT_COMMISSION = 40;
@@ -323,25 +335,31 @@ export const earningsService = {
                 const date = appointment.appointment_date;
 
                 if (!stylistId) {
-                    console.warn(`Appointment ${appointment.id} has no stylist assigned`);
+                    console.warn(`⚠️ Appointment ${appointment.id} has no stylist assigned`);
                     continue;
                 }
 
                 // Get commission rate from stylist record, fall back to global settings
                 let commissionRate = DEFAULT_COMMISSION;
                 const stylistData = appointment.stylist as any; // Type assertion for nested relation
+
                 if (stylistData && stylistData.commission) {
                     commissionRate = stylistData.commission;
+                    console.log(`💰 Using stylist commission: ${commissionRate}%`);
                 } else {
                     // Fallback to commission_settings table
-                    const { data: commissionSettings } = await supabase
+                    const { data: commissionSettings, error: commissionError } = await supabase
                         .from('commission_settings')
                         .select('*')
                         .eq('role', 'Stylist')
                         .eq('is_active', true)
                         .single();
-                    if (commissionSettings?.commission_percentage) {
+
+                    if (commissionError) {
+                        console.warn('⚠️ Error fetching commission settings, using default:', commissionError);
+                    } else if (commissionSettings?.commission_percentage) {
                         commissionRate = commissionSettings.commission_percentage;
+                        console.log(`💰 Using global commission: ${commissionRate}%`);
                     }
                 }
 
@@ -364,6 +382,7 @@ export const earningsService = {
                 }
 
                 if (serviceRevenue === 0 && additionalFeesTotal === 0) {
+                    console.log(`ℹ️ No revenue for appointment ${appointment.id}, skipping`);
                     continue;
                 }
 
@@ -374,16 +393,21 @@ export const earningsService = {
                 console.log(`💰 Earnings for ${appointment.id}: Revenue=${totalRevenue} (Service=${serviceRevenue}, AddFees=${additionalFeesTotal}), Commission=${commissionAmount} (${commissionRate}%)`);
 
                 // Get or create earnings record for this date
-                const { data: existingEarning } = await supabase
+                const { data: existingEarning, error: earningFetchError } = await supabase
                     .from('staff_earnings')
                     .select('*')
                     .eq('staff_id', stylistId)
                     .eq('date', date)
                     .single();
 
+                if (earningFetchError && earningFetchError.code !== 'PGRST116') {
+                    console.error('❌ Error fetching existing earning:', earningFetchError);
+                    throw earningFetchError;
+                }
+
                 if (existingEarning) {
                     // Update existing record
-                    await supabase
+                    const { error: updateError } = await supabase
                         .from('staff_earnings')
                         .update({
                             service_revenue: existingEarning.service_revenue + totalRevenue,
@@ -393,9 +417,15 @@ export const earningsService = {
                             updated_at: new Date().toISOString()
                         })
                         .eq('id', existingEarning.id);
+
+                    if (updateError) {
+                        console.error('❌ Error updating earning:', updateError);
+                        throw updateError;
+                    }
+                    console.log(`✅ Updated existing earning record for ${date}`);
                 } else {
                     // Create new record
-                    await supabase
+                    const { error: insertError } = await supabase
                         .from('staff_earnings')
                         .insert({
                             staff_id: stylistId,
@@ -406,10 +436,26 @@ export const earningsService = {
                             total_earnings: commissionAmount,
                             appointments_count: 1
                         });
+
+                    if (insertError) {
+                        console.error('❌ Error inserting earning:', insertError);
+                        throw insertError;
+                    }
+                    console.log(`✅ Created new earning record for ${date}`);
                 }
             }
-        } catch (error) {
-            console.error('Error updating earnings for multiple appointments:', error);
+
+            console.log('✅ Earnings update completed successfully');
+        } catch (error: any) {
+            console.error('❌ Error updating earnings for multiple appointments');
+            console.error('  Error type:', typeof error);
+            if (error && typeof error === 'object') {
+                console.error('  Code:', error.code);
+                console.error('  Message:', error.message);
+                console.error('  Details:', error.details);
+                console.error('  Hint:', error.hint);
+            }
+            console.error('  Full error:', JSON.stringify(error, null, 2));
             throw error;
         }
     }

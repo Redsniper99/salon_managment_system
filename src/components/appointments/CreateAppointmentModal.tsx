@@ -521,6 +521,11 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                                 .reverse() // Start from most recent
                                 .find(b => b.stylistId === booking.stylistId && b.time);
 
+                            // Collect all occupied time slots from OTHER services
+                            const occupiedSlots = serviceBookings
+                                .filter((b, idx) => idx !== index && b.time) // Exclude current service, only confirmed bookings
+                                .map(b => b.time);
+
                             return (
                                 <ServiceSlotMapper
                                     key={booking.serviceId}
@@ -534,6 +539,7 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                                     selectedTime={booking.time}
                                     branchId={user?.branchId}
                                     previousBookingTime={previousSameStylistBooking?.time}
+                                    occupiedSlots={occupiedSlots}
                                 />
                             );
                         })}

@@ -6,7 +6,9 @@ import { Search, ShoppingCart, Plus, Tag, Trash2, Printer, RotateCcw, Calendar, 
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
 import ReceiptModal from '@/components/pos/ReceiptModal';
+import SplitPaymentModal from '@/components/pos/SplitPaymentModal';
 import { formatCurrency } from '@/lib/utils';
+import { PaymentBreakdown } from '@/lib/types';
 import { servicesService } from '@/services/services';
 import { customersService } from '@/services/customers';
 import { invoicesService } from '@/services/invoices';
@@ -46,6 +48,8 @@ export default function POSPage() {
 
     // Payment method state
     const [paymentMethod, setPaymentMethod] = useState('Cash');
+    const [showSplitPayment, setShowSplitPayment] = useState(false);
+    const [paymentBreakdown, setPaymentBreakdown] = useState<PaymentBreakdown[] | null>(null);
 
     // Receipt Modal
     const [showReceipt, setShowReceipt] = useState(false);
@@ -417,7 +421,10 @@ export default function POSPage() {
                 promo_code: promoCode || undefined,
                 tax,
                 total,
-                payment_method: paymentMethod,
+                payment_method: paymentBreakdown
+                    ? paymentBreakdown.reduce((max, p) => p.amount > max.amount ? p : max).method
+                    : paymentMethod,
+                payment_breakdown: paymentBreakdown || undefined, // NEW: Split payment support
                 created_by: user.id
             });
 
@@ -1185,22 +1192,55 @@ export default function POSPage() {
                             <div className="mt-6 space-y-4">
                                 <div>
                                     <label className="text-xs font-medium text-gray-500 mb-2 block">Payment Method</label>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {['Cash', 'Card', 'UPI', 'BankTransfer'].map(method => (
+                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                        {['Cash', 'Card'].map(method => (
                                             <button
                                                 key={method}
-                                                onClick={() => setPaymentMethod(method)}
-                                                className={`p-2 rounded-lg text-xs font-medium transition-all ${paymentMethod === method
+                                                onClick={() => { setPaymentMethod(method); setPaymentBreakdown(null); }}
+                                                className={`p-2 rounded-lg text-xs font-medium transition-all ${paymentMethod === method && !paymentBreakdown
                                                     ? 'bg-primary-600 text-white'
                                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
                                                     }`}
                                             >
-                                                {method === 'Cash' && <Banknote className="h-4 w-4 mx-auto mb-1" />}
-                                                {method === 'Card' && <CreditCard className="h-4 w-4 mx-auto mb-1" />}
-                                                {method}
+                                                {method === 'Cash' && '💵'}
+                                                {method === 'Card' && '💳'}
+                                                <div className="text-xs mt-1">{method}</div>
                                             </button>
                                         ))}
                                     </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={() => { setPaymentMethod('BankTransfer'); setPaymentBreakdown(null); }}
+                                            className={`p-2 rounded-lg text-xs font-medium transition-all ${paymentMethod === 'BankTransfer' && !paymentBreakdown
+                                                ? 'bg-primary-600 text-white'
+                                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            🏦
+                                            <div className="text-xs mt-1">Bank</div>
+                                        </button>
+                                        <button
+                                            onClick={() => setShowSplitPayment(true)}
+                                            className={`p-2 rounded-lg text-xs font-medium transition-all ${paymentBreakdown
+                                                ? 'bg-gradient-to-r from-primary-600 to-purple-600 text-white'
+                                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            💳💵
+                                            <div className="text-xs mt-1">Split</div>
+                                        </button>
+                                    </div>
+                                    {paymentBreakdown && (
+                                        <div className="mt-2 p-2 bg-primary-50 dark:bg-primary-900/20 rounded-lg text-xs">
+                                            <div className="font-medium text-primary-800 dark:text-primary-200 mb-1">Split Payment:</div>
+                                            {paymentBreakdown.map((p, i) => (
+                                                <div key={i} className="flex justify-between text-primary-700 dark:text-primary-300">
+                                                    <span>{p.method}:</span>
+                                                    <span>{formatCurrency(p.amount)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <Button
@@ -1225,6 +1265,20 @@ export default function POSPage() {
                     isOpen={showReceipt}
                     onClose={() => setShowReceipt(false)}
                     invoice={lastInvoice}
+                />
+            )}
+
+            {/* Split Payment Modal */}
+            {showSplitPayment && (
+                <SplitPaymentModal
+                    total={total}
+                    onConfirm={(breakdown, primaryMethod) => {
+                        setPaymentBreakdown(breakdown);
+                        setPaymentMethod(primaryMethod);
+                        setShowSplitPayment(false);
+                        showToast('Split payment configured', 'success');
+                    }}
+                    onCancel={() => setShowSplitPayment(false)}
                 />
             )}
         </div>

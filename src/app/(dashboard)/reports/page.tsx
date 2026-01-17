@@ -5,13 +5,14 @@ import { motion } from 'framer-motion';
 import {
     BarChart3, Send, CheckCircle, XCircle, DollarSign,
     TrendingUp, Calendar, ArrowUpRight, ArrowDownRight,
-    Users, Target
+    Users, Target, FileSpreadsheet
 } from 'lucide-react';
 import { analyticsService, AnalyticsSummary, DailyStats } from '@/services/analytics';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import ReceiptModal from '@/components/pos/ReceiptModal';
 import { RotateCcw } from 'lucide-react';
+import { exportSalesReportToExcel } from '@/lib/excel-export';
 
 export default function ReportsPage() {
     const { hasRole } = useAuth();
@@ -260,6 +261,7 @@ export default function ReportsPage() {
 
 function SystemReports() {
     const [downloading, setDownloading] = useState<string | null>(null);
+    const [exportingExcel, setExportingExcel] = useState<string | null>(null);
 
     const reports = [
         {
@@ -346,7 +348,7 @@ function SystemReports() {
                             </div>
                         </div>
                     </div>
-                    <div className="mt-6 flex justify-end">
+                    <div className="mt-6 flex gap-2 justify-end">
                         <button
                             onClick={() => handleDownload(report.id)}
                             disabled={downloading === report.id}
@@ -364,6 +366,39 @@ function SystemReports() {
                                 </>
                             )}
                         </button>
+                        {report.id === 'sales_monthly' && (
+                            <button
+                                onClick={async () => {
+                                    setExportingExcel(report.id);
+                                    try {
+                                        const { reportsService } = await import('@/services/reports');
+                                        const now = new Date();
+                                        const data = await reportsService.getSalesReportData(now.getMonth() + 1, now.getFullYear());
+                                        exportSalesReportToExcel(data);
+                                        alert('Excel file downloaded successfully!');
+                                    } catch (error) {
+                                        console.error('Error exporting to Excel:', error);
+                                        alert('Failed to export to Excel');
+                                    } finally {
+                                        setExportingExcel(null);
+                                    }
+                                }}
+                                disabled={exportingExcel === report.id}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-600 bg-green-50 hover:bg-green-100 dark:text-green-400 dark:bg-green-900/20 dark:hover:bg-green-900/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {exportingExcel === report.id ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                        Exporting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FileSpreadsheet className="h-4 w-4" />
+                                        Export Excel
+                                    </>
+                                )}
+                            </button>
+                        )}
                     </div>
                 </div>
             ))}

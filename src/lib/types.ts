@@ -88,7 +88,12 @@ export interface Staff {
 }
 
 // Invoice Types
-export type PaymentMethod = 'Cash' | 'Card' | 'BankTransfer' | 'UPI' | 'Other';
+export type PaymentMethod = 'Cash' | 'Card' | 'BankTransfer' | 'Other';
+
+export interface PaymentBreakdown {
+    method: PaymentMethod;
+    amount: number;
+}
 
 export interface InvoiceItem {
     id: string;
@@ -111,7 +116,8 @@ export interface Invoice {
     promoCode?: string;
     tax: number;
     total: number;
-    paymentMethod: PaymentMethod;
+    paymentMethod: PaymentMethod; // Primary method for backward compatibility
+    paymentBreakdown?: PaymentBreakdown[]; // Split payment details
     createdAt: string;
     createdBy: string; // User ID
 }

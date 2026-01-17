@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { getLocalDateString } from '@/lib/utils';
+import { calculatePaymentTotals } from '@/lib/payment-utils';
 
 export const reportsService = {
     /**
@@ -11,13 +12,20 @@ export const reportsService = {
         // Get today's revenue
         const { data: invoices, error: invoiceError } = await supabase
             .from('invoices')
-            .select('total')
+            .select('total, created_at')
             .gte('created_at', `${today}T00:00:00`)
             .lte('created_at', `${today}T23:59:59`);
+
+        console.log('📊 Dashboard Query - Date:', today);
+        console.log('📊 Dashboard Query - Found invoices:', invoices?.length || 0);
+        if (invoices && invoices.length > 0) {
+            console.log('📊 Invoice details:', invoices);
+        }
 
         if (invoiceError) throw invoiceError;
 
         const todayRevenue = invoices?.reduce((sum, inv) => sum + (inv.total || 0), 0) || 0;
+        console.log('📊 Calculated revenue:', todayRevenue);
 
         // Get appointment stats
         const { data: appointments, error: apptError } = await supabase
@@ -150,13 +158,8 @@ export const reportsService = {
         const totalDiscount = invoices?.reduce((sum, inv) => sum + (inv.discount || 0), 0) || 0;
         const totalTax = invoices?.reduce((sum, inv) => sum + (inv.tax || 0), 0) || 0;
 
-        const byPaymentMethod: { [key: string]: { amount: number; count: number } } = {};
-        invoices?.forEach(inv => {
-            const method = inv.payment_method || 'Cash';
-            if (!byPaymentMethod[method]) byPaymentMethod[method] = { amount: 0, count: 0 };
-            byPaymentMethod[method].amount += inv.total || 0;
-            byPaymentMethod[method].count += 1;
-        });
+        // NEW: Calculate payment totals with split payment support
+        const paymentTotals = calculatePaymentTotals(invoices || []);
 
         const byService: { [key: string]: { revenue: number; count: number } } = {};
         invoices?.forEach(inv => {
@@ -184,9 +187,21 @@ export const reportsService = {
             totalTransactions: invoices?.length || 0,
             totalDiscount,
             totalTax,
-            byPaymentMethod: Object.entries(byPaymentMethod).map(([method, data]) => ({
-                method, amount: data.amount, count: data.count
-            })),
+            // NEW: Payment method totals
+            totalCash: paymentTotals.totalCash,
+            totalCard: paymentTotals.totalCard,
+            totalBankTransfer: paymentTotals.totalBankTransfer,
+            totalUPI: paymentTotals.totalUPI,
+            totalOther: paymentTotals.totalOther,
+            splitPaymentCount: paymentTotals.splitPaymentCount,
+            // Legacy format for backward compatibility
+            byPaymentMethod: [
+                { method: 'Cash', amount: paymentTotals.totalCash, count: 0 },
+                { method: 'Card', amount: paymentTotals.totalCard, count: 0 },
+                { method: 'Bank Transfer', amount: paymentTotals.totalBankTransfer, count: 0 },
+                { method: 'UPI', amount: paymentTotals.totalUPI, count: 0 },
+                { method: 'Other', amount: paymentTotals.totalOther, count: 0 }
+            ].filter(p => p.amount > 0),
             byService: Object.entries(byService)
                 .map(([service, data]) => ({ service, revenue: data.revenue, count: data.count }))
                 .sort((a, b) => b.revenue - a.revenue),
