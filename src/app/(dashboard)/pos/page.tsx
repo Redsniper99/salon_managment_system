@@ -11,6 +11,7 @@ import WalkInServicesPanel from '@/components/pos/WalkInServicesPanel';
 import QuickCustomerForm from '@/components/pos/QuickCustomerForm';
 import { formatCurrency } from '@/lib/utils';
 import { PaymentBreakdown } from '@/lib/types';
+import { schedulingService } from '@/services/scheduling';
 import { servicesService } from '@/services/services';
 import { customersService } from '@/services/customers';
 import { invoicesService } from '@/services/invoices';
@@ -81,13 +82,26 @@ export default function POSPage() {
     const [showCustomerForm, setShowCustomerForm] = useState(false);
     const [pendingPhone, setPendingPhone] = useState('');
 
+    // Salon settings for tax
+    const [salonSettings, setSalonSettings] = useState<any>(null);
+
     // Fetch services, coupons, and products on mount
     useEffect(() => {
         fetchServices();
         fetchAvailableCoupons();
         fetchProducts();
         fetchStaff();
+        fetchSettings();
     }, []);
+
+    const fetchSettings = async () => {
+        try {
+            const data = await schedulingService.getSalonSettings();
+            setSalonSettings(data);
+        } catch (error) {
+            console.error('Error fetching settings:', error);
+        }
+    };
 
     // Search customers when query changes
     useEffect(() => {
@@ -235,7 +249,7 @@ export default function POSPage() {
 
             // Automatically select the newly created customer
             setSelectedCustomer(data);
-            setCustomerSearch(data.name);
+            setCustomerSearch('');
             setCustomers([]);
             setShowCustomerForm(false);
 
@@ -666,7 +680,11 @@ export default function POSPage() {
         const additionalFee = item.additionalFee || 0;
         return sum + itemTotal + additionalFee;
     }, 0);
-    const tax = subtotal * 0.05; // 5% tax
+
+    const enableTax = salonSettings?.enable_tax ?? false;
+    const taxRate = salonSettings?.tax_rate ?? 0;
+    const tax = enableTax ? (subtotal * taxRate) / 100 : 0;
+
     const totalDiscount = discount + loyaltyDiscount; // Combined promo + loyalty discount
     const total = Math.max(0, subtotal - totalDiscount + tax);
 
@@ -743,7 +761,7 @@ export default function POSPage() {
                                                 className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
                                                 onClick={() => {
                                                     setSelectedCustomer(customer);
-                                                    setCustomerSearch(customer.name);
+                                                    setCustomerSearch('');
                                                     setCustomers([]);
                                                 }}
                                             >
@@ -1320,10 +1338,12 @@ export default function POSPage() {
                                         <span>-{formatCurrency(loyaltyDiscount)}</span>
                                     </div>
                                 )}
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600 dark:text-gray-400">Tax (5%)</span>
-                                    <span className="text-gray-900 dark:text-white">{formatCurrency(tax)}</span>
-                                </div>
+                                {enableTax && (
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600 dark:text-gray-400">Tax ({taxRate}%)</span>
+                                        <span className="text-gray-900 dark:text-white">{formatCurrency(tax)}</span>
+                                    </div>
+                                )}
                                 <div className="flex justify-between text-xl font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
                                     <span className="text-gray-900 dark:text-white">Total</span>
                                     <span className="text-primary-600">{formatCurrency(total)}</span>

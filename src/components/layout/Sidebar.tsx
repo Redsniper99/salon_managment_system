@@ -117,12 +117,6 @@ const navItems: NavItem[] = [
         allowedRoles: ['Owner', 'Manager'],
     },
     {
-        label: 'Social Media',
-        href: '/social-media',
-        icon: Share2,
-        allowedRoles: ['Owner'],
-    },
-    {
         label: 'Reports',
         href: '/reports',
         icon: BarChart3,

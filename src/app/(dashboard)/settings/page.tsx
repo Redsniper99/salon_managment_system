@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Lock, DollarSign, Save, Loader, Mail, Eye, EyeOff, CheckCircle, XCircle, CalendarDays, Clock, Trash2, Plus, Gift } from 'lucide-react';
+import { Lock, DollarSign, Save, Loader, Mail, Eye, EyeOff, CheckCircle, XCircle, CalendarDays, Clock, Trash2, Plus, Gift, Receipt } from 'lucide-react';
+import TaxSettings from './TaxSettings';
 import { loyaltyService, LoyaltySettings as LoyaltySettingsType } from '@/services/loyalty';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
@@ -541,6 +542,51 @@ function SchedulingSettings({ showMessage }: SchedulingSettingsProps) {
                     />
                     <p className="mt-1 text-xs text-gray-500">
                         How many days in advance customers can book
+                    </p>
+                </div>
+
+                {/* Enable Tax */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Enable Tax in POS
+                    </label>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setSettings({ ...settings, enable_tax: !settings.enable_tax })}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.enable_tax ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
+                                }`}
+                        >
+                            <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.enable_tax ? 'translate-x-6' : 'translate-x-1'
+                                    }`}
+                            />
+                        </button>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                            {settings.enable_tax ? 'Tax enabled' : 'Tax disabled'}
+                        </span>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                        When enabled, tax will be calculated and displayed on POS invoices
+                    </p>
+                </div>
+
+                {/* Tax Management */}
+                <div>
+                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Tax Configuration
+                    </h4>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Tax Rate (%)
+                    </label>
+                    <Input
+                        type="number"
+                        value={settings.tax_rate}
+                        onChange={(e) => setSettings({ ...settings, tax_rate: parseFloat(e.target.value) })}
+                        min="0"
+                        step="0.1"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                        The percentage tax applied to services and products.
                     </p>
                 </div>
             </div>
@@ -1088,7 +1134,7 @@ function LoyaltySettingsTab({ showMessage }: LoyaltySettingsTabProps) {
 
 export default function SettingsPage() {
     const { user, hasRole } = useAuth();
-    const [activeTab, setActiveTab] = useState<'passwords' | 'scheduling' | 'availability' | 'loyalty'>('passwords');
+    const [activeTab, setActiveTab] = useState<'passwords' | 'scheduling' | 'availability' | 'loyalty' | 'tax'>('passwords');
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
     const showMessage = useCallback((type: 'success' | 'error', text: string) => {
@@ -1164,6 +1210,19 @@ export default function SettingsPage() {
 
                 {hasRole(['Owner']) && (
                     <button
+                        onClick={() => setActiveTab('tax')}
+                        className={`px-4 py-2 font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'tax'
+                            ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                            : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                            }`}
+                    >
+                        <Receipt className="h-4 w-4 inline mr-2" />
+                        Tax Management
+                    </button>
+                )}
+
+                {hasRole(['Owner']) && (
+                    <button
                         onClick={() => setActiveTab('loyalty')}
                         className={`px-4 py-2 font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'loyalty'
                             ? 'border-primary-600 text-primary-600 dark:text-primary-400'
@@ -1207,6 +1266,10 @@ export default function SettingsPage() {
 
                 {activeTab === 'availability' && (
                     <AvailabilitySettings user={user} showMessage={showMessage} />
+                )}
+
+                {activeTab === 'tax' && hasRole(['Owner']) && (
+                    <TaxSettings showMessage={showMessage} />
                 )}
 
                 {activeTab === 'loyalty' && hasRole(['Owner']) && (

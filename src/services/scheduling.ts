@@ -13,6 +13,8 @@ interface SalonSettings {
     booking_buffer_minutes: number;
     default_start_time: string;
     default_end_time: string;
+    enable_tax: boolean;
+    tax_rate: number;
 }
 
 export interface StylistBreak {
@@ -29,25 +31,38 @@ export const schedulingService = {
     /**
      * Get salon settings
      */
-    async getSalonSettings(): Promise<SalonSettings | null> {
+    async getSalonSettings(): Promise<SalonSettings> {
+        const defaults: SalonSettings = {
+            slot_interval: 30,
+            booking_window_days: 30,
+            booking_buffer_minutes: 10,
+            default_start_time: '09:00',
+            default_end_time: '18:00',
+            enable_tax: false,
+            tax_rate: 0,
+        };
+
         try {
             const { data, error } = await supabase
                 .from('salon_settings')
                 .select('*')
-                .single();
+                .limit(1);
 
-            if (error) throw error;
-            return data;
+            if (error) {
+                console.error('Error fetching salon settings:', error);
+                return defaults;
+            }
+
+            if (!data || data.length === 0) {
+                console.warn('No salon settings found, using defaults');
+                return defaults;
+            }
+
+            // Merge database values with defaults (in case some columns are null)
+            return { ...defaults, ...data[0] };
         } catch (error) {
             console.error('Error fetching salon settings:', error);
-            // Return defaults if not found
-            return {
-                slot_interval: 30,
-                booking_window_days: 30,
-                booking_buffer_minutes: 10,
-                default_start_time: '09:00',
-                default_end_time: '18:00',
-            };
+            return defaults;
         }
     },
 
@@ -56,12 +71,39 @@ export const schedulingService = {
      */
     async updateSalonSettings(settings: Partial<SalonSettings>): Promise<{ success: boolean; message: string }> {
         try {
-            const { error } = await supabase
+            // First, get the existing settings row ID
+            const { data: existingSettings, error: fetchError } = await supabase
+                .from('salon_settings')
+                .select('id')
+                .limit(1);
+
+            if (fetchError) {
+                console.error('Error fetching existing settings:', fetchError);
+                throw fetchError;
+            }
+
+            if (!existingSettings || existingSettings.length === 0) {
+                // No settings row exists, create one
+                const { error: insertError } = await supabase
+                    .from('salon_settings')
+                    .insert({
+                        ...settings,
+                        slot_interval: settings.slot_interval || 30,
+                        booking_window_days: settings.booking_window_days || 30,
+                        booking_buffer_minutes: settings.booking_buffer_minutes || 10,
+                    });
+
+                if (insertError) throw insertError;
+                return { success: true, message: 'Settings created successfully' };
+            }
+
+            // Update the existing row
+            const { error: updateError } = await supabase
                 .from('salon_settings')
                 .update(settings)
-                .eq('id', '00000000-0000-0000-0000-000000000001');
+                .eq('id', existingSettings[0].id);
 
-            if (error) throw error;
+            if (updateError) throw updateError;
 
             return { success: true, message: 'Settings updated successfully' };
         } catch (error: unknown) {

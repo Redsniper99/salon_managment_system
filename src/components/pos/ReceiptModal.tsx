@@ -74,10 +74,12 @@ export default function ReceiptModal({ isOpen, onClose, invoice }: ReceiptModalP
                                 <span>-{formatCurrency(invoice.discount)}</span>
                             </div>
                         )}
-                        <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Tax</span>
-                            <span>{formatCurrency(invoice.tax)}</span>
-                        </div>
+                        {invoice.tax > 0 && (
+                            <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">Tax</span>
+                                <span>{formatCurrency(invoice.tax)}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t border-gray-200">
                             <span>Total</span>
                             <span>{formatCurrency(invoice.total)}</span>
