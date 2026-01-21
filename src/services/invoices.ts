@@ -116,6 +116,22 @@ export const invoicesService = {
             }
         }
 
+        // Update earnings for walk-in services (no appointment)
+        const walkInItems = invoice.items.filter((item: any) => item.type === 'walk-in-service' && item.stylistId);
+        if (data && walkInItems.length > 0) {
+            try {
+                console.log('💰 Processing walk-in earnings for invoice:', data.id);
+                await earningsService.updateEarningsForWalkIn(
+                    data.id,
+                    invoice.items,
+                    data.created_at
+                );
+            } catch (walkInError: any) {
+                console.error('❌ Error updating walk-in earnings:', walkInError);
+                // Don't throw - invoice creation succeeded
+            }
+        }
+
         return data;
     },
 

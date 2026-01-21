@@ -458,5 +458,123 @@ export const earningsService = {
             console.error('  Full error:', JSON.stringify(error, null, 2));
             throw error;
         }
+    },
+
+    /**
+     * Calculate and update earnings for walk-in services (no appointment)
+     * Items should have stylistId and type='walk-in-service'
+     */
+    async updateEarningsForWalkIn(
+        invoiceId: string,
+        items: any[],
+        invoiceDate: string // created_at from invoice
+    ) {
+        try {
+            console.log('💰 Updating earnings for walk-in services...');
+
+            // Filter walk-in service items that have stylistId
+            const walkInItems = items.filter((item: any) =>
+                item.type === 'walk-in-service' && item.stylistId
+            );
+
+            if (walkInItems.length === 0) {
+                console.log('No walk-in items with stylistId found');
+                return;
+            }
+
+            // Extract date from timestamp
+            const date = invoiceDate.split('T')[0];
+            console.log(`📅 Processing walk-in earnings for date: ${date}`);
+
+            // Group items by stylist
+            const itemsByStylist = new Map<string, any[]>();
+            walkInItems.forEach((item: any) => {
+                if (!itemsByStylist.has(item.stylistId)) {
+                    itemsByStylist.set(item.stylistId, []);
+                }
+                itemsByStylist.get(item.stylistId)!.push(item);
+            });
+
+            console.log(`👨‍💼 Processing earnings for ${itemsByStylist.size} stylist(s)`);
+
+            // Calculate and update earnings for each stylist
+            for (const [stylistId, stylistItems] of itemsByStylist) {
+                console.log(`\n💵 Processing stylist ${stylistId}...`);
+
+                // Get stylist's commission rate (from staff table or default 40%)
+                const { data: stylist } = await supabase
+                    .from('staff')
+                    .select('commission, name')
+                    .eq('id', stylistId)
+                    .single();
+
+                const commissionRate = stylist?.commission || 40;
+                console.log(`  Commission rate: ${commissionRate}%`);
+
+                // Calculate revenue for this stylist's walk-in services
+                const serviceRevenue = stylistItems.reduce((sum: number, item: any) =>
+                    sum + (item.price * item.quantity), 0
+                );
+                const commissionAmount = (serviceRevenue * commissionRate) / 100;
+
+                console.log(`  Service revenue: ${serviceRevenue}`);
+                console.log(`  Commission: ${commissionAmount}`);
+
+                // Get or create earnings record for this stylist and date
+                const { data: existingEarning } = await supabase
+                    .from('staff_earnings')
+                    .select('*')
+                    .eq('staff_id', stylistId)
+                    .eq('date', date)
+                    .single();
+
+                if (existingEarning) {
+                    // Update existing record
+                    console.log(`  Updating existing earnings record...`);
+                    const { error: updateError } = await supabase
+                        .from('staff_earnings')
+                        .update({
+                            service_revenue: existingEarning.service_revenue + serviceRevenue,
+                            commission_amount: existingEarning.commission_amount + commissionAmount,
+                            total_earnings: existingEarning.total_earnings + commissionAmount,
+                            // Don't increment appointments_count for walk-ins
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', existingEarning.id);
+
+                    if (updateError) {
+                        console.error('❌ Error updating earning:', updateError);
+                        throw updateError;
+                    }
+                    console.log(`  ✅ Updated earnings for ${stylist?.name || stylistId}`);
+                } else {
+                    // Create new record
+                    console.log(`  Creating new earnings record...`);
+                    const { error: insertError } = await supabase
+                        .from('staff_earnings')
+                        .insert({
+                            staff_id: stylistId,
+                            date,
+                            service_revenue: serviceRevenue,
+                            commission_amount: commissionAmount,
+                            salary_amount: 0,
+                            total_earnings: commissionAmount,
+                            appointments_count: 0 // 0 for walk-ins
+                        });
+
+                    if (insertError) {
+                        console.error('❌ Error inserting earning:', insertError);
+                        throw insertError;
+                    }
+                    console.log(`  ✅ Created earnings record for ${stylist?.name || stylistId}`);
+                }
+            }
+
+            console.log('✅ Walk-in earnings update completed successfully');
+        } catch (error: any) {
+            console.error('❌ Error updating earnings for walk-in services');
+            console.error('  Error:', error);
+            throw error;
+        }
     }
 };

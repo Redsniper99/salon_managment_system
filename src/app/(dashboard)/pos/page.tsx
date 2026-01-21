@@ -7,6 +7,8 @@ import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
 import ReceiptModal from '@/components/pos/ReceiptModal';
 import SplitPaymentModal from '@/components/pos/SplitPaymentModal';
+import WalkInServicesPanel from '@/components/pos/WalkInServicesPanel';
+import QuickCustomerForm from '@/components/pos/QuickCustomerForm';
 import { formatCurrency } from '@/lib/utils';
 import { PaymentBreakdown } from '@/lib/types';
 import { servicesService } from '@/services/services';
@@ -57,8 +59,12 @@ export default function POSPage() {
     // Inventory Products state
     const [products, setProducts] = useState<any[]>([]);
     const [productSearch, setProductSearch] = useState('');
-    const [activeTab, setActiveTab] = useState<'services' | 'products' | 'appointments'>('services');
+    const [activeTab, setActiveTab] = useState<'services' | 'products' | 'appointments' | 'walkin'>('services');
     const [lastInvoice, setLastInvoice] = useState<any>(null);
+
+    // Walk-in mode state
+    const [staff, setStaff] = useState<any[]>([]);
+    const [selectedStylistForService, setSelectedStylistForService] = useState<Map<string, string>>(new Map());
 
     // UI section toggles
     const [showExtraServices, setShowExtraServices] = useState(false);
@@ -71,11 +77,16 @@ export default function POSPage() {
     const [loyaltyType, setLoyaltyType] = useState<'card' | 'points' | 'visit' | 'none'>('none');
     const [pointsToRedeem, setPointsToRedeem] = useState(0);
 
+    // Customer creation modal
+    const [showCustomerForm, setShowCustomerForm] = useState(false);
+    const [pendingPhone, setPendingPhone] = useState('');
+
     // Fetch services, coupons, and products on mount
     useEffect(() => {
         fetchServices();
         fetchAvailableCoupons();
         fetchProducts();
+        fetchStaff();
     }, []);
 
     // Search customers when query changes
@@ -160,6 +171,23 @@ export default function POSPage() {
         }
     };
 
+    const fetchStaff = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('staff')
+                .select('id, name, role')
+                .eq('is_active', true)
+                .eq('role', 'Stylist')
+                .order('name');
+
+            if (error) throw error;
+            setStaff(data || []);
+        } catch (error) {
+            console.error('Error fetching staff:', error);
+            showToast('Failed to load staff', 'error');
+        }
+    };
+
     const fetchCustomerAppointments = async (customerId: string) => {
         setLoadingAppointments(true);
         try {
@@ -179,9 +207,44 @@ export default function POSPage() {
             setCustomers(data || []);
         } catch (error) {
             console.error('Error searching customers:', error);
+            setCustomers([]);
         }
     };
 
+    const handleQuickCustomerCreate = async (customerData: {
+        name: string;
+        phone: string;
+        email?: string;
+        gender?: string;
+    }) => {
+        try {
+            const { data, error } = await supabase
+                .from('customers')
+                .insert({
+                    name: customerData.name,
+                    phone: customerData.phone,
+                    email: customerData.email || null,
+                    gender: customerData.gender || null,
+                    total_visits: 0,
+                    total_spent: 0
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Automatically select the newly created customer
+            setSelectedCustomer(data);
+            setCustomerSearch(data.name);
+            setCustomers([]);
+            setShowCustomerForm(false);
+
+            showToast(`Customer created: ${data.name}`, 'success');
+        } catch (error) {
+            console.error('Error creating customer:', error);
+            showToast('Failed to create customer', 'error');
+        }
+    };
     // Check if appointment is already in cart
     const isAppointmentInCart = (appointmentId: string) => {
         return cart.some(item => item.appointmentId === appointmentId);
@@ -248,7 +311,39 @@ export default function POSPage() {
                 quantity: 1
             }]);
         }
-        showToast('Service added to cart', 'success');
+        showToast(`${service.name} added to cart`, 'success');
+    };
+
+    // Add walk-in service with stylist to cart
+    const addWalkInServiceToCart = (service: any, stylistId: string) => {
+        if (!stylistId) {
+            showToast('Please select a stylist', 'warning');
+            return;
+        }
+
+        const stylist = staff.find(s => s.id === stylistId);
+        if (!stylist) {
+            showToast('Invalid stylist selected', 'error');
+            return;
+        }
+
+        setCart([...cart, {
+            type: 'walk-in-service',
+            serviceId: service.id,
+            stylistId: stylistId,
+            stylistName: stylist.name,
+            name: service.name,
+            price: service.price,
+            quantity: 1,
+            appointmentId: null // Walk-in has no appointment
+        }]);
+
+        showToast(`${service.name} added (Stylist: ${stylist.name})`, 'success');
+
+        // Clear selection for this service
+        const newMap = new Map(selectedStylistForService);
+        newMap.delete(service.id);
+        setSelectedStylistForService(newMap);
     };
 
     const addProductToCart = (product: any) => {
@@ -639,22 +734,46 @@ export default function POSPage() {
                                 onChange={(e) => setCustomerSearch(e.target.value)}
                                 leftIcon={<Search className="h-5 w-5" />}
                             />
-                            {customers.length > 0 && !selectedCustomer && (
+                            {customerSearch.length > 2 && (
                                 <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                                    {customers.map(customer => (
-                                        <button
-                                            key={customer.id}
-                                            className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                                            onClick={() => {
-                                                setSelectedCustomer(customer);
-                                                setCustomerSearch(customer.name);
-                                                setCustomers([]);
-                                            }}
-                                        >
-                                            <p className="font-medium text-gray-900 dark:text-white">{customer.name}</p>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400">{customer.phone}</p>
-                                        </button>
-                                    ))}
+                                    {customers.length > 0 ? (
+                                        customers.map(customer => (
+                                            <button
+                                                key={customer.id}
+                                                className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
+                                                onClick={() => {
+                                                    setSelectedCustomer(customer);
+                                                    setCustomerSearch(customer.name);
+                                                    setCustomers([]);
+                                                }}
+                                            >
+                                                <p className="font-medium text-gray-900 dark:text-white">{customer.name}</p>
+                                                <p className="text-sm text-gray-500 dark:text-gray-400">{customer.phone}</p>
+                                            </button>
+                                        ))
+                                    ) : (
+                                        <div className="p-4">
+                                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3 text-center">
+                                                No customer found
+                                            </p>
+                                            <button
+                                                onClick={() => {
+                                                    // Open modal with phone number pre-filled
+                                                    const phone = customerSearch.replace(/\D/g, '');
+                                                    if (phone.length >= 9) {
+                                                        setPendingPhone(phone);
+                                                        setShowCustomerForm(true);
+                                                    } else {
+                                                        showToast('Please enter a valid phone number', 'warning');
+                                                    }
+                                                }}
+                                                className="w-full p-3 bg-primary-500 hover:bg-primary-600 text-white rounded-lg flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <Plus className="h-4 w-4" />
+                                                Create Walk-in Customer
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -1009,6 +1128,21 @@ export default function POSPage() {
                             </AnimatePresence>
                         </div>
                     )}
+
+                    {/* Walk-in Services Panel */}
+                    {selectedCustomer && (
+                        <WalkInServicesPanel
+                            services={services}
+                            staff={staff}
+                            selectedStylistForService={selectedStylistForService}
+                            onStylistChange={(serviceId, stylistId) => {
+                                const newMap = new Map(selectedStylistForService);
+                                newMap.set(serviceId, stylistId);
+                                setSelectedStylistForService(newMap);
+                            }}
+                            onAddService={addWalkInServiceToCart}
+                        />
+                    )}
                 </div>
 
                 {/* Right: Bill Summary - At bottom on tablet, right side on desktop */}
@@ -1086,7 +1220,17 @@ export default function POSPage() {
                                                 {extraItems.map((item: any) => (
                                                     <div key={item.index} className="flex justify-between items-center">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-gray-900 dark:text-white">{item.name}</span>
+                                                            <div className="flex-1">
+                                                                <span className="text-gray-900 dark:text-white">{item.name}</span>
+                                                                {item.type === 'walk-in-service' && item.stylistName && (
+                                                                    <div className="flex items-center gap-1 mt-0.5">
+                                                                        <User className="h-3 w-3 text-primary-500" />
+                                                                        <span className="text-xs text-primary-600 dark:text-primary-400">
+                                                                            {item.stylistName}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                             <div className="flex items-center gap-1 text-xs">
                                                                 <button
                                                                     onClick={() => updateItemQuantity(item.index, -1)}
@@ -1260,27 +1404,39 @@ export default function POSPage() {
             </div>
 
             {/* Receipt Modal */}
-            {lastInvoice && (
-                <ReceiptModal
-                    isOpen={showReceipt}
-                    onClose={() => setShowReceipt(false)}
-                    invoice={lastInvoice}
-                />
-            )}
+            {
+                lastInvoice && (
+                    <ReceiptModal
+                        isOpen={showReceipt}
+                        onClose={() => setShowReceipt(false)}
+                        invoice={lastInvoice}
+                    />
+                )
+            }
 
             {/* Split Payment Modal */}
-            {showSplitPayment && (
-                <SplitPaymentModal
-                    total={total}
-                    onConfirm={(breakdown, primaryMethod) => {
-                        setPaymentBreakdown(breakdown);
-                        setPaymentMethod(primaryMethod);
-                        setShowSplitPayment(false);
-                        showToast('Split payment configured', 'success');
-                    }}
-                    onCancel={() => setShowSplitPayment(false)}
-                />
-            )}
-        </div>
+            {
+                showSplitPayment && (
+                    <SplitPaymentModal
+                        total={total}
+                        onConfirm={(breakdown, primaryMethod) => {
+                            setPaymentBreakdown(breakdown);
+                            setPaymentMethod(primaryMethod);
+                            setShowSplitPayment(false);
+                            showToast('Split payment configured', 'success');
+                        }}
+                        onCancel={() => setShowSplitPayment(false)}
+                    />
+                )
+            }
+
+            {/* Quick Customer Creation Form */}
+            <QuickCustomerForm
+                isOpen={showCustomerForm}
+                onClose={() => setShowCustomerForm(false)}
+                onSubmit={handleQuickCustomerCreate}
+                initialPhone={pendingPhone}
+            />
+        </div >
     );
 }
