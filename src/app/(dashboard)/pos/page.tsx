@@ -149,29 +149,26 @@ export default function POSPage() {
 
 
     const fetchAvailableCoupons = async () => {
-        // Coupons feature not implemented yet - skip fetching
-        setAvailableCoupons([]);
-        return;
-
-        /* Uncomment when coupons table is created
         try {
-            const now = new Date().toISOString();
+            const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
             const { data, error } = await supabase
-                .from('coupons')
+                .from('promo_codes')
                 .select('*')
                 .eq('is_active', true)
-                .gte('valid_until', now);
+                .lte('start_date', today)
+                .gte('end_date', today);
 
             if (error) {
+                console.error('Error fetching promo codes:', error);
                 setAvailableCoupons([]);
                 return;
             }
 
             setAvailableCoupons(data || []);
         } catch (error) {
+            console.error('Error fetching promo codes:', error);
             setAvailableCoupons([]);
         }
-        */
     };
 
 
@@ -1278,8 +1275,48 @@ export default function POSPage() {
 
                         {/* Discount Section */}
                         {cart.length > 0 && (
-                            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
-                                <label className="text-xs font-medium text-gray-500 mb-2 block">Coupon / Discount</label>
+                            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl space-y-3">
+                                <label className="text-xs font-medium text-gray-500 mb-2 block">Discount</label>
+
+                                {/* Manual Discount Input */}
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1 block">Manual Discount (%)</label>
+                                    <Input
+                                        type="number"
+                                        value={selectedCoupon ? '' : (discount > 0 ? ((discount / subtotal) * 100).toFixed(1) : '')}
+                                        onChange={(e) => {
+                                            const percentage = parseFloat(e.target.value) || 0;
+                                            const clampedPercentage = Math.min(Math.max(percentage, 0), 100);
+                                            const discountAmount = (subtotal * clampedPercentage) / 100;
+                                            setDiscount(discountAmount);
+                                            setPromoCode('');
+                                            setSelectedCoupon(null);
+                                        }}
+                                        placeholder="0"
+                                        min="0"
+                                        max="100"
+                                        step="0.1"
+                                        disabled={!!selectedCoupon}
+                                        className="text-sm"
+                                    />
+                                    {discount > 0 && !selectedCoupon && (
+                                        <p className="text-xs text-success-600 mt-1">
+                                            Discount: {formatCurrency(discount)}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Divider */}
+                                <div className="relative">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                                    </div>
+                                    <div className="relative flex justify-center text-xs">
+                                        <span className="bg-gray-50 dark:bg-gray-700/30 px-2 text-gray-500">or use promo code</span>
+                                    </div>
+                                </div>
+
+                                {/* Promo Code Selector */}
                                 {selectedCoupon ? (
                                     <div className="flex items-center justify-between bg-success-50 dark:bg-success-900/20 p-2 rounded-lg">
                                         <span className="text-success-700 dark:text-success-300 font-medium">{selectedCoupon.code}</span>
@@ -1292,8 +1329,9 @@ export default function POSPage() {
                                         <button
                                             onClick={() => setCouponDropdownOpen(!couponDropdownOpen)}
                                             className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+                                            disabled={discount > 0}
                                         >
-                                            <span className="text-gray-500">{availableCoupons.length > 0 ? 'Select coupon...' : 'No coupons'}</span>
+                                            <span className="text-gray-500">{availableCoupons.length > 0 ? 'Select promo code...' : 'No promo codes'}</span>
                                             <ChevronDown className="h-4 w-4" />
                                         </button>
                                         {couponDropdownOpen && availableCoupons.length > 0 && (
@@ -1328,7 +1366,7 @@ export default function POSPage() {
                                 </div>
                                 {discount > 0 && (
                                     <div className="flex justify-between text-sm text-success-600">
-                                        <span>Coupon {promoCode && `(${promoCode})`}</span>
+                                        <span>Discount {selectedCoupon ? `(${selectedCoupon.code})` : '(Manual)'}</span>
                                         <span>-{formatCurrency(discount)}</span>
                                     </div>
                                 )}
