@@ -2,11 +2,11 @@ import { supabase } from '@/lib/supabase';
 import { Customer } from '@/lib/types';
 
 export const customersService = {
-    /**
-     * Search customers by name or phone
-     * Supports Sri Lankan phone formats: +94768689056, 0768689056, 768689056
-     */
     async searchCustomers(searchQuery: string) {
+        if (!searchQuery || searchQuery.trim() === '') {
+            return [];
+        }
+
         // Normalize phone number search for Sri Lankan numbers
         let phoneSearchPatterns: string[] = [];
 
@@ -41,40 +41,47 @@ export const customersService = {
             }
         }
 
-        // Build query
-        let query = supabase
-            .from('customers')
-            .select(`
-                *,
-                invoices (
-                    total,
-                    created_at
-                )
-            `);
+        try {
+            // Build query
+            let query = supabase
+                .from('customers')
+                .select(`
+                    *,
+                    invoices (
+                        total,
+                        created_at
+                    )
+                `);
 
-        // Add search conditions
-        if (isPhoneSearch && phoneSearchPatterns.length > 0) {
-            // Search for any of the phone number variations
-            const phoneConditions = phoneSearchPatterns.map(pattern => `phone.eq.${pattern}`).join(',');
-            query = query.or(phoneConditions);
-        } else {
-            // Name search (case-insensitive partial match)
-            query = query.or(`name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`);
+            // Add search conditions
+            if (isPhoneSearch && phoneSearchPatterns.length > 0) {
+                // Use .in() to search for any of the phone number variations
+                query = query.in('phone', phoneSearchPatterns);
+            } else {
+                // Name search (case-insensitive partial match)
+                query = query.ilike('name', `%${searchQuery}%`);
+            }
+
+            const { data, error } = await query
+                .order('name')
+                .limit(10);
+
+            if (error) {
+                console.error('Customer search error:', error);
+                throw error;
+            }
+
+            // Process data to get only the last invoice
+            return data?.map(customer => ({
+                ...customer,
+                last_invoice: customer.invoices?.sort((a: any, b: any) =>
+                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                )[0]
+            })) || [];
+        } catch (error) {
+            console.error('Error in searchCustomers:', error);
+            return [];
         }
-
-        const { data, error } = await query
-            .order('name')
-            .limit(10);
-
-        if (error) throw error;
-
-        // Process data to get only the last invoice
-        return data.map(customer => ({
-            ...customer,
-            last_invoice: customer.invoices?.sort((a: any, b: any) =>
-                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            )[0]
-        }));
     },
 
     /**

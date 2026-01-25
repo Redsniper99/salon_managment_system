@@ -29,6 +29,7 @@ export default function POSPage() {
     const { showToast } = useToast();
     const [cart, setCart] = useState<any[]>([]);
     const [discount, setDiscount] = useState(0);
+    const [discountInput, setDiscountInput] = useState(''); // Uncontrolled input for manual discount
     const [promoCode, setPromoCode] = useState('');
     const [services, setServices] = useState<any[]>([]);
     const [customers, setCustomers] = useState<any[]>([]);
@@ -1283,19 +1284,28 @@ export default function POSPage() {
                                     <label className="text-xs text-gray-500 mb-1 block">Manual Discount (%)</label>
                                     <Input
                                         type="number"
-                                        value={selectedCoupon ? '' : (discount > 0 ? ((discount / subtotal) * 100).toFixed(1) : '')}
+                                        value={selectedCoupon ? '' : discountInput}
                                         onChange={(e) => {
+                                            setDiscountInput(e.target.value);
+                                        }}
+                                        onBlur={(e) => {
                                             const percentage = parseFloat(e.target.value) || 0;
                                             const clampedPercentage = Math.min(Math.max(percentage, 0), 100);
                                             const discountAmount = (subtotal * clampedPercentage) / 100;
                                             setDiscount(discountAmount);
-                                            setPromoCode('');
-                                            setSelectedCoupon(null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const percentage = parseFloat((e.target as HTMLInputElement).value) || 0;
+                                                const clampedPercentage = Math.min(Math.max(percentage, 0), 100);
+                                                const discountAmount = (subtotal * clampedPercentage) / 100;
+                                                setDiscount(discountAmount);
+                                            }
                                         }}
                                         placeholder="0"
                                         min="0"
                                         max="100"
-                                        step="0.1"
+                                        step="any"
                                         disabled={!!selectedCoupon}
                                         className="text-sm"
                                     />

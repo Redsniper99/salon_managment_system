@@ -466,6 +466,7 @@ function AllInvoices() {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Customer</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Items</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Payment Method</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
@@ -474,11 +475,11 @@ function AllInvoices() {
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500">Loading invoices...</td>
+                                    <td colSpan={8} className="px-6 py-8 text-center text-sm text-gray-500">Loading invoices...</td>
                                 </tr>
                             ) : invoices.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500">No invoices found</td>
+                                    <td colSpan={8} className="px-6 py-8 text-center text-sm text-gray-500">No invoices found</td>
                                 </tr>
                             ) : (
                                 invoices.map((invoice) => (
@@ -498,6 +499,30 @@ function AllInvoices() {
                                         <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
                                             {/* Handle items as JSON array */}
                                             {Array.isArray(invoice.items) ? invoice.items.length : 0} items
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            {(() => {
+                                                const method = invoice.payment_method || 'Cash';
+                                                const badgeColors = {
+                                                    'Cash': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+                                                    'Card': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+                                                    'BankTransfer': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+                                                    'UPI': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+                                                    'Other': 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
+                                                };
+                                                const displayNames = {
+                                                    'Cash': 'Cash',
+                                                    'Card': 'Card',
+                                                    'BankTransfer': 'Online',
+                                                    'UPI': 'UPI',
+                                                    'Other': 'Other'
+                                                };
+                                                return (
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${badgeColors[method as keyof typeof badgeColors] || badgeColors.Other}`}>
+                                                        {displayNames[method as keyof typeof displayNames] || method}
+                                                    </span>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white">
                                             LKR {invoice.total.toLocaleString()}

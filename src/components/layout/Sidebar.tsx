@@ -24,6 +24,7 @@ import {
     Gift,
     Share2,
     Package,
+    Wallet,
     LucideIcon,
     ChevronLeft,
     ChevronRight,
@@ -85,6 +86,12 @@ const navItems: NavItem[] = [
         href: '/earnings',
         icon: DollarSign,
         allowedRoles: ['Owner', 'Manager', 'Stylist', 'Receptionist'],
+    },
+    {
+        label: 'Petty Cash',
+        href: '/petty-cash',
+        icon: Wallet,
+        allowedRoles: ['Owner', 'Manager', 'Receptionist'],
     },
     {
         label: 'Customer Segments',
