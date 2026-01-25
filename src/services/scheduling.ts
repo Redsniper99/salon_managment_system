@@ -231,12 +231,14 @@ export const schedulingService = {
             for (let minutes = startMinutes; minutes < endMinutes; minutes += interval) {
                 const slotTime = minutesToTime(minutes);
                 const slotEndMinutes = minutes + serviceDuration + buffer;
+                const serviceEndMinutes = minutes + serviceDuration; // Without buffer for end-of-day check
 
                 let available = true;
                 let reason = '';
 
-                // Check working hours
-                if (slotEndMinutes > endMinutes) {
+                // Check if the service (NOT including buffer) fits within working hours
+                // Buffer is only for spacing between appointments, not for end of day
+                if (serviceEndMinutes > endMinutes) {
                     available = false;
                     reason = 'Outside working hours';
                 }

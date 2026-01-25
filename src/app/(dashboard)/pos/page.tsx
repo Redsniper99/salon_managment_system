@@ -1054,52 +1054,7 @@ export default function POSPage() {
                         </div>
                     )}
 
-                    {/* Extra Services (Collapsible) */}
-                    {selectedCustomer && (
-                        <div className="card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
-                            <button
-                                onClick={() => setShowExtraServices(!showExtraServices)}
-                                className="w-full p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                            >
-                                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                                    ➕ Add Extra Services
-                                </span>
-                                {showExtraServices ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                            </button>
-                            <AnimatePresence>
-                                {showExtraServices && (
-                                    <motion.div
-                                        initial={{ height: 0 }}
-                                        animate={{ height: 'auto' }}
-                                        exit={{ height: 0 }}
-                                        className="overflow-hidden"
-                                    >
-                                        <div className="p-4 pt-0 border-t border-gray-100 dark:border-gray-700">
-                                            <Input
-                                                type="text"
-                                                placeholder="Search services..."
-                                                value={serviceSearch}
-                                                onChange={(e) => setServiceSearch(e.target.value)}
-                                                leftIcon={<Search className="h-4 w-4" />}
-                                            />
-                                            <div className="mt-3 grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                                                {filteredServices.slice(0, 20).map(service => (
-                                                    <button
-                                                        key={service.id}
-                                                        onClick={() => addToCart(service)}
-                                                        className="p-2 text-left border border-gray-200 dark:border-gray-700 rounded-lg hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all text-sm"
-                                                    >
-                                                        <p className="font-medium text-gray-900 dark:text-white truncate">{service.name}</p>
-                                                        <p className="text-xs text-gray-500">{formatCurrency(service.price)}</p>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
-                    )}
+
 
                     {/* Manual Fee (Collapsible) */}
                     {selectedCustomer && (
