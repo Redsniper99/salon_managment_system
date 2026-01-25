@@ -86,7 +86,7 @@ export const pettyCashService = {
     /**
      * Record expense (withdrawal)
      */
-    async recordExpense(amount: number, description: string, userId: string, branchId: string) {
+    async recordExpense(amount: number, description: string, userId: string, branchId: string | null) {
         // Get current balance
         const currentBalance = await this.getCurrentBalance();
 
