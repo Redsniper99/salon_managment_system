@@ -56,9 +56,28 @@ export default function AppointmentDetailsModal({
             return;
         }
 
+        // Confirmation for InProgress status (when customer arrives)
+        if (newStatus === 'InProgress' && appointment.status === 'Pending') {
+            const confirmed = window.confirm(
+                `Start service for ${appointment.customer?.name || 'this customer'}?\n\nThis will mark the appointment as in progress.`
+            );
+            if (!confirmed) return;
+        }
+
+        // Confirmation for Cancelled status
+        if (newStatus === 'Cancelled') {
+            const confirmed = window.confirm(
+                `Cancel appointment for ${appointment.customer?.name || 'this customer'}?\n\nThis action cannot be undone.`
+            );
+            if (!confirmed) return;
+        }
+
         setUpdating(true);
         try {
             await onStatusUpdate(newStatus);
+            showToast(`Status updated to ${newStatus}`, 'success');
+        } catch (error) {
+            showToast('Failed to update status', 'error');
         } finally {
             setUpdating(false);
         }
