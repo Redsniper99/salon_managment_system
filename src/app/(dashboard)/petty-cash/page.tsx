@@ -58,13 +58,18 @@ export default function PettyCashPage() {
             return;
         }
 
+        if (!user?.id) {
+            showToast('User not authenticated', 'error');
+            return;
+        }
+
         try {
             setProcessing(true);
             await pettyCashService.addDeposit(
                 parseFloat(depositAmount),
                 depositDescription,
-                user?.id || '',
-                user?.branchId || ''
+                user.id,
+                user.branchId || null
             );
             showToast('Cash added successfully', 'success');
             setDepositAmount('');
@@ -94,13 +99,18 @@ export default function PettyCashPage() {
             return;
         }
 
+        if (!user?.id) {
+            showToast('User not authenticated', 'error');
+            return;
+        }
+
         try {
             setProcessing(true);
             await pettyCashService.recordExpense(
                 parseFloat(expenseAmount),
                 expenseDescription,
-                user?.id || '',
-                user?.branchId || ''
+                user.id,
+                user.branchId || null
             );
             showToast('Expense recorded successfully', 'success');
             setExpenseAmount('');
