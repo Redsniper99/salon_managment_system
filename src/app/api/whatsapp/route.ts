@@ -6,6 +6,9 @@ import crypto from 'crypto';
 import { geminiModel, tools } from '@/lib/whatsapp/gemini';
 import { handleFunctionCall } from '@/lib/whatsapp/function-handlers';
 import { conversationManager } from '@/lib/whatsapp/conversation-manager';
+import { bookingFlow } from '@/lib/whatsapp/booking-state';
+import { intentRouter } from '@/lib/whatsapp/intent-router';
+import { ragContext } from '@/lib/whatsapp/rag-context';
 
 // Verify request signature from Meta
 function verifySignature(req: NextRequest, rawBody: string): boolean {
@@ -83,25 +86,54 @@ export async function POST(req: NextRequest) {
             if (!waToken) console.warn('⚠️ WHATSAPP_ACCESS_TOKEN/WHATSAPP_API_TOKEN is missing');
             if (!phoneId) console.warn('⚠️ WHATSAPP_PHONE_NUMBER_ID is missing');
 
-            // 1. Get Conversation History
-            console.log('⏳ Fetching history...');
-            const history = await conversationManager.getHistory(from);
-            console.log(`✅ History fetched: ${history.length} messages`);
+            // 1. Check Appointment Booking State
+            const bookingState = await bookingFlow.getState(from);
+            if (bookingState) {
+                console.log(`🚦 Continuing booking flow for ${from} in state: ${bookingState.status}`);
+                const handled = await bookingFlow.handleBookingFlow(from, text, bookingState);
+                if (handled) return NextResponse.json({ success: true });
+            }
 
-            // 2. Start Gemini Chat
-            console.log('🔮 Starting Gemini chat...');
+            // 2. Check Intent Router
+            console.log('🧭 Checking intent router...');
+            const intent = intentRouter.detectIntent(text);
+            console.log(`🎯 Detected Intent: ${intent}`);
+            
+            if (intent === 'START_BOOKING') {
+                await bookingFlow.startBooking(from);
+                return NextResponse.json({ success: true });
+            }
+            
+            const routerHandled = await intentRouter.handleIntent(intent, from);
+            if (routerHandled) {
+                console.log('✅ Handled by intent router (0 tokens!)');
+                return NextResponse.json({ success: true });
+            }
+
+            // --- LLM FALLBACK PATH ---
+            console.log('🔮 Falling back to Gemini AI...');
+
+            // 3. Get Conversation History
+            const history = await conversationManager.getHistory(from);
+            
+            // 4. Build RAG Context (only inject if necessary, but for simplicity we inject compact context)
+            const servicesContext = await ragContext.getCompactServicesContext();
+            
+            // Inject context directly into the first message or as a system message override if API allows
+            // We'll pre-pend it to the user's message to give immediately relevant context
+            const enrichedText = `[SYSTEM RAG CONTEXT:\n${servicesContext}\nCURRENT DATE: ${new Date().toLocaleDateString()}]\n\nCustomer: ${text}`;
+
             const chat = geminiModel.startChat({
                 history: history,
                 tools: tools as any,
             });
 
-            // 4. Send Message to Gemini
             console.log('✉️ Sending message to Gemini...');
-            const result = await chat.sendMessage(text);
+            const result = await chat.sendMessage(enrichedText);
             let response = result.response;
             console.log('🤖 Gemini responded');
 
-            // 5. Handle Function Calls (Loops if multiple calls)
+            // 5. Handle Function Calls
             let callCount = 0;
             while (response.candidates?.[0]?.content?.parts?.some(p => p.functionCall) && callCount < 5) {
                 const parts = response.candidates[0].content.parts;
@@ -138,7 +170,7 @@ export async function POST(req: NextRequest) {
             const waResult = await sendWhatsAppMessage(from, createTextMessage(finalAiText));
             console.log('📬 WhatsApp Send Result:', waResult ? 'SUCCESS' : 'FAILED');
 
-            // 7. Save History
+            // 7. Save History (Save original text, not enriched context text)
             console.log('💾 Saving history...');
             await conversationManager.saveMessage(from, 'user', text);
             await conversationManager.saveMessage(from, 'model', finalAiText);

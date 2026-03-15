@@ -5,7 +5,7 @@ export interface Message {
     parts: { text: string }[];
 }
 
-const HISTORY_LIMIT = 8; // Keep last 8 messages for context (optimized for token usage)
+const HISTORY_LIMIT = 4; // Reduced from 8 to 4 to save Tokens
 
 export const conversationManager = {
     async getHistory(phoneNumber: string): Promise<Message[]> {
@@ -21,7 +21,10 @@ export const conversationManager = {
         // Gemini expects specific format: model instead of assistant
         return (session.conversation_history as any[]).map(msg => ({
             role: msg.role === 'assistant' ? 'model' : msg.role,
-            parts: msg.parts || [{ text: msg.content || "" }]
+            // If the message is really long (e.g., from old function calls), truncate it
+            parts: msg.parts ? msg.parts.map((p: any) => ({
+                text: p.text ? (p.text.length > 300 ? p.text.substring(0, 300) + '...[truncated]' : p.text) : ""
+            })) : [{ text: msg.content ? (msg.content.length > 300 ? msg.content.substring(0, 300) + '...[truncated]' : msg.content) : "" }]
         }));
     },
 

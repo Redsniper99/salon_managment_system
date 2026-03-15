@@ -4,7 +4,8 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 export const geminiModel = genAI.getGenerativeModel({
     model: process.env.GEMINI_MODEL || "gemini-2.0-flash-exp",
-    systemInstruction: `You're a WhatsApp salon assistant. Help with: bookings, services, loyalty, promos only. Be concise, use emojis. Support English/Sinhala/Tamil. Always confirm booking details (service, date, time) before calling book_appointment. Today: ${new Date().toLocaleDateString()}.`,
+    systemInstruction: `Salon assistant. Be concise, use emojis. Support EN/SIN/TAM. 
+NEVER invent services, prices, or slots. ONLY use the provided SERVICES LIST context if present. If you don't know, ask them to call.`,
 });
 
 export const tools = [
