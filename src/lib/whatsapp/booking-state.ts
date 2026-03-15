@@ -97,8 +97,8 @@ export const bookingFlow = {
         let text = "*Step 1: Choose a Service*\n\nPlease reply with the *NAME* of the service you want to book:\n\n";
         
         // Take top 8 services 
-        services.slice(0, 8).forEach(s => {
-            text += `▫️ ${s.name} (Rs.${s.price})\n`;
+        services.slice(0, 8).forEach((s, idx) => {
+            text += `*${idx + 1}.* ${s.name} (Rs.${s.price})\n`;
         });
         text += "\n_(Or type 'cancel' to stop)_";
 
@@ -110,9 +110,27 @@ export const bookingFlow = {
         const services = await servicesService.getServices();
         const lowerText = text.toLowerCase().trim();
         
-        // Try exact match first, then partial match
-        const selected = services.find(s => s.name.toLowerCase() === lowerText) || 
-                         services.find(s => s.name.toLowerCase().includes(lowerText));
+        // Try exact match first
+        let selected = services.find(s => s.name.toLowerCase() === lowerText);
+        
+        // If they replied with a number, try to match the index of the top 8 services shown to them
+        if (!selected && /^\d+$/.test(lowerText)) {
+            const index = parseInt(lowerText, 10) - 1;
+            const topServices = services.slice(0, 8);
+            if (index >= 0 && index < topServices.length) {
+                selected = topServices[index];
+            }
+        }
+
+        // If no exact match or number, try partial match (check if user input is contained in service name, or vice versa)
+        if (!selected) {
+            selected = services.find(s => s.name.toLowerCase().includes(lowerText) || lowerText.includes(s.name.toLowerCase()));
+        }
+        
+        // Try extracting service ID directly if we sent it via a button payload later
+        if (!selected) {
+             selected = services.find(s => s.id === text);
+        }
 
         if (!selected) {
             await sendWhatsAppMessage(phone, createTextMessage("I couldn't find that service. Please reply with the exact name from the list."));
@@ -194,17 +212,30 @@ export const bookingFlow = {
     },
 
     async handleSlotSelection(phone: string, text: string, state: AppointmentStateData) {
-        // Strict mapping of HH:MM
+        const lowerText = text.toLowerCase().trim();
+        
+        // 1. Try strict mapping of HH:MM
+        let timeStr = "";
         const timeMatch = text.match(/\d{1,2}:\d{2}/);
         
-        if (!timeMatch) {
-            await sendWhatsAppMessage(phone, createTextMessage("Please reply with a valid time from the list (e.g., 10:00)."));
-            return true;
+        if (timeMatch) {
+            timeStr = timeMatch[0];
+            // Normalize time if needed (e.g., "9:00" -> "09:00")
+            if (timeStr.length === 4) timeStr = `0${timeStr}`;
+        } else {
+            // 2. Try to match am/pm if they just typed "10 am"
+            const amPmMatch = lowerText.match(/^(\d{1,2})(?:\s*)?(am|pm)$/);
+            if (amPmMatch) {
+                let hour = parseInt(amPmMatch[1], 10);
+                const isPm = amPmMatch[2] === 'pm';
+                if (isPm && hour < 12) hour += 12;
+                if (!isPm && hour === 12) hour = 0;
+                timeStr = `${hour.toString().padStart(2, '0')}:00`;
+            } else {
+                await sendWhatsAppMessage(phone, createTextMessage("Please reply with a valid time from the list (e.g., *10:00*)."));
+                return true;
+            }
         }
-        
-        let timeStr = timeMatch[0];
-        // Normalize time if needed (e.g., "9:00" -> "09:00")
-        if (timeStr.length === 4) timeStr = `0${timeStr}`;
 
         // Move to confirm
         state.status = 'CONFIRMING';

@@ -68,7 +68,13 @@ export async function POST(req: NextRequest) {
 
         if (message) {
             const from = message.from;
-            const text = message.text?.body || message.interactive?.list_reply?.title || message.interactive?.button_reply?.title || '';
+            // Prioritize the ID of interactive replies, fallback to the title, then to normal text body
+            const text = message.interactive?.button_reply?.id || 
+                         message.interactive?.list_reply?.id || 
+                         message.interactive?.button_reply?.title || 
+                         message.interactive?.list_reply?.title || 
+                         message.text?.body || 
+                         '';
 
             if (!text) {
                 console.log('⏭️ Skipping non-text message');
