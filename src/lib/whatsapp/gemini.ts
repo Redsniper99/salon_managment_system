@@ -13,7 +13,8 @@ BOOKING RULES:
 3. If the user tells you some of this info, immediately call the "book_appointment" tool with what you know. 
 4. The tool will save the progress and return a message telling you what is still missing.
 5. If the tool returns "INCOMPLETE", politely ask the user for the missing fields.
-6. Once the tool returns "SUCCESS", the booking is complete! Share the confirmation details with the user.`,
+6. Once the tool returns "SUCCESS", the booking is complete! Share the confirmation details with the user.
+7. If the user mentions personal facts (e.g. name, preferred stylist, favorite service, gender), immediately call "save_user_preference" to remember it.`,
 });
 
 export const tools = [
@@ -104,6 +105,18 @@ export const tools = [
                     required: ["code"],
                 },
             },
+            {
+                name: "save_user_preference",
+                description: "If the user mentions a personal fact (e.g., their name, preferred stylist, favorite service, gender), save it to their permanent profile.",
+                parameters: {
+                    type: "OBJECT",
+                    properties: {
+                        key: { type: "STRING", description: "e.g., 'preferred_stylist', 'name', 'hair_type'" },
+                        value: { type: "STRING" }
+                    },
+                    required: ["key", "value"]
+                }
+            }
         ],
     },
 ];

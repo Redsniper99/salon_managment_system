@@ -4,6 +4,7 @@ import { bookingStateOptions } from '@/lib/whatsapp/booking-state';
 import { loyaltyService } from '@/services/loyalty';
 import { promosService } from '@/services/promos';
 import { customersService } from '@/services/customers';
+import { getAdminClient } from '@/lib/supabase';
 
 export async function handleFunctionCall(name: string, args: any, customerPhone: string) {
     console.log(`Executing function: ${name}`, args);
@@ -206,6 +207,31 @@ export async function handleFunctionCall(name: string, args: any, customerPhone:
                     description: promo.description,
                     minSpend: promo.min_spend
                 };
+            } catch (error: any) {
+                return { error: error.message };
+            }
+
+        case "save_user_preference":
+            try {
+                const { key, value } = args;
+                if (!key || !value) return { error: "Key or value missing." };
+                
+                const supabase = getAdminClient();
+                const { data: session } = await supabase
+                    .from('bot_sessions')
+                    .select('context')
+                    .eq('phone_number', customerPhone)
+                    .single();
+                
+                const currentContext = session?.context || {};
+                currentContext[key] = value;
+                
+                await supabase
+                    .from('bot_sessions')
+                    .update({ context: currentContext })
+                    .eq('phone_number', customerPhone);
+                    
+                return { status: "Saved to long term memory" };
             } catch (error: any) {
                 return { error: error.message };
             }

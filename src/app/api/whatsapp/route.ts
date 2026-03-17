@@ -115,12 +115,21 @@ export async function POST(req: NextRequest) {
             // 3. Get Conversation History
             const history = await conversationManager.getHistory(from);
             
-            // 4. Build RAG Context (only inject if necessary, but for simplicity we inject compact context)
+            // 4. Fetch Permanent User Context
+            const supabase = getAdminClient();
+            const { data: sessionData } = await supabase
+                .from('bot_sessions')
+                .select('context')
+                .eq('phone_number', from)
+                .single();
+            const permanentContext = sessionData?.context ? JSON.stringify(sessionData.context) : "{}";
+            
+            // 5. Build RAG Context
             const servicesContext = await ragContext.getCompactServicesContext();
             
             // Inject context directly into the first message or as a system message override if API allows
             // We'll pre-pend it to the user's message to give immediately relevant context
-            const enrichedText = `[SYSTEM RAG CONTEXT:\n${servicesContext}\nCURRENT DATE: ${new Date().toLocaleDateString()}]\n\nCustomer: ${text}`;
+            const enrichedText = `[SYSTEM RAG CONTEXT:\n${servicesContext}\nPERMANENT USER CONTEXT: ${permanentContext}\nCURRENT DATE: ${new Date().toLocaleDateString()}]\n\nCustomer: ${text}`;
 
             const chat = geminiModel.startChat({
                 history: history,
