@@ -2,8 +2,6 @@ import { sendWhatsAppMessage, createTextMessage, createButtonsMessage } from '@/
 import { servicesService } from '@/services/services';
 import { appointmentsService } from '@/services/appointments';
 import { customersService } from '@/services/customers';
-import { bookingStateOptions } from '@/lib/whatsapp/booking-state';
-
 type Intent = 'GREETING' | 'HELP' | 'SERVICES' | 'START_BOOKING' | 'MY_APPOINTMENTS' | 'CANCEL' | 'UNKNOWN';
 
 export const intentRouter = {
@@ -52,9 +50,9 @@ export const intentRouter = {
                 return true;
 
             case 'START_BOOKING':
-                // Clear any old, stale booking memory
-                await bookingStateOptions.saveSlots(phone, null);
-                return false; // Crucial: Return false so the webhook knows to pass this to Gemini AI to start the conversational flow
+                const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.salonflow.space';
+                await sendWhatsAppMessage(phone, createTextMessage(`📅 Ready to book? Please visit our website:\n${baseUrl}`));
+                return true;
 
             default:
                 return false; // Let AI or state machine handle it

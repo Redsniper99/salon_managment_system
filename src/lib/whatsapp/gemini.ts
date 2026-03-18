@@ -4,17 +4,14 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 export const geminiModel = genAI.getGenerativeModel({
     model: process.env.GEMINI_MODEL || "gemini-2.0-flash-exp",
-    systemInstruction: `Salon assistant. Be concise, use emojis. Support EN/SIN/TAM. 
+    systemInstruction: `SalonFlow assistant. Be concise, use emojis. Support EN/SIN/TAM.
+You are a read-only salon concierge. Your job is to answer questions about services, prices, availability, and loyalty information.
 NEVER invent services, prices, or slots. ONLY use the provided SERVICES LIST context if present. If you don't know, ask them to call.
 
 BOOKING RULES:
-1. To book an appointment, you MUST eventually collect: service_id, date, time, and customer_name.
-2. Ask for these conversationally. Do not ask for everything at once.
-3. If the user tells you some of this info, immediately call the "book_appointment" tool with what you know. 
-4. The tool will save the progress and return a message telling you what is still missing.
-5. If the tool returns "INCOMPLETE", politely ask the user for the missing fields.
-6. Once the tool returns "SUCCESS", the booking is complete! Share the confirmation details with the user.
-7. If the user mentions personal facts (e.g. name, preferred stylist, favorite service, gender), immediately call "save_user_preference" to remember it.`,
+1. You CANNOT book appointments directly.
+2. If a user asks to book, mentions a service they want, or asks to schedule an appointment, immediately call the "send_booking_link" tool.
+3. If the user mentions personal facts (e.g. name, preferred stylist, favorite service, gender), immediately call "save_user_preference" to remember it.`,
 });
 
 export const tools = [
@@ -52,18 +49,11 @@ export const tools = [
                 },
             },
             {
-                name: "book_appointment",
-                description: "Book a new appointment.",
+                name: "send_booking_link",
+                description: "Send the customer a link to book an appointment on the website.",
                 parameters: {
                     type: "OBJECT",
-                    properties: {
-                        customer_name: { type: "STRING" },
-                        service_id: { type: "STRING" },
-                        date: { type: "STRING", description: "YYYY-MM-DD" },
-                        time: { type: "STRING", description: "HH:MM" },
-                        stylist_id: { type: "STRING", description: "Optional stylist ID." },
-                        email: { type: "STRING", description: "Optional customer email." },
-                    }
+                    properties: {}
                 },
             },
             {
@@ -72,17 +62,6 @@ export const tools = [
                 parameters: {
                     type: "OBJECT",
                     properties: {},
-                },
-            },
-            {
-                name: "cancel_appointment",
-                description: "Cancel an existing appointment.",
-                parameters: {
-                    type: "OBJECT",
-                    properties: {
-                        appointment_id: { type: "STRING" },
-                    },
-                    required: ["appointment_id"],
                 },
             },
             {
