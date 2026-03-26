@@ -471,7 +471,7 @@ export default function CreateAppointmentModal({ isOpen, onClose, onSuccess }: C
                             <strong>Selected Date:</strong> {formatDate(formData.date)}
                         </p>
                         <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
-                            Please select a stylist and time slot for each service below.
+                            For each service: pick a stylist from the dropdown first, then select the available time slots.
                         </p>
                     </div>
 

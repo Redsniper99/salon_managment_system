@@ -116,6 +116,25 @@ export async function GET(request: NextRequest) {
 
         const slotInterval = settings?.slot_interval || 30;
 
+        const defaultWorkingStartMinutes = 9 * 60; // 09:00
+        const defaultWorkingEndMinutes = 18 * 60; // 18:00
+
+        // Accept both "HH:MM" and "HH:MM:SS" (and gracefully handle undefined/malformed values).
+        const timeToMinutes = (timeValue: unknown): number | null => {
+            if (typeof timeValue !== 'string') return null;
+            const parts = timeValue.split(':');
+            if (parts.length < 2) return null;
+            const h = Number(parts[0]);
+            const m = Number(parts[1]);
+            if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+            return h * 60 + m;
+        };
+
+        const workingStartMinutes = (workingHours: any) =>
+            timeToMinutes(workingHours?.start) ?? defaultWorkingStartMinutes;
+        const workingEndMinutes = (workingHours: any) =>
+            timeToMinutes(workingHours?.end) ?? defaultWorkingEndMinutes;
+
         // Get all breaks for these stylists
         const { data: allBreaks } = await supabase
             .from('stylist_breaks')
@@ -161,11 +180,8 @@ export async function GET(request: NextRequest) {
 
         // Calculate global time range
         for (const stylist of availableStylists) {
-            const workingHours = stylist.working_hours || { start: '09:00', end: '18:00' };
-            const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-            const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-            const startTime = startHour * 60 + startMinute;
-            const endTime = endHour * 60 + endMinute;
+            const startTime = workingStartMinutes(stylist.working_hours);
+            const endTime = workingEndMinutes(stylist.working_hours);
 
             globalStartTime = Math.min(globalStartTime, startTime);
             globalEndTime = Math.max(globalEndTime, endTime);
@@ -194,11 +210,8 @@ export async function GET(request: NextRequest) {
             let availableCount = 0;
 
             for (const stylist of availableStylists) {
-                const workingHours = stylist.working_hours || { start: '09:00', end: '18:00' };
-                const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-                const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-                const stylistStart = startHour * 60 + startMinute;
-                const stylistEnd = endHour * 60 + endMinute;
+                const stylistStart = workingStartMinutes(stylist.working_hours);
+                const stylistEnd = workingEndMinutes(stylist.working_hours);
 
                 // Check if slot is within stylist's working hours
                 if (currentTime < stylistStart || slotEnd > stylistEnd) {
@@ -209,10 +222,9 @@ export async function GET(request: NextRequest) {
                 const breaks = allBreaks?.filter(b => b.stylist_id === stylist.id) || [];
                 let isBreak = false;
                 for (const brk of breaks) {
-                    const [bStartH, bStartM] = brk.start_time.split(':').map(Number);
-                    const [bEndH, bEndM] = brk.end_time.split(':').map(Number);
-                    const breakStart = bStartH * 60 + bStartM;
-                    const breakEnd = bEndH * 60 + bEndM;
+                    const breakStart = timeToMinutes(brk.start_time);
+                    const breakEnd = timeToMinutes(brk.end_time);
+                    if (breakStart === null || breakEnd === null) continue;
 
                     if (currentTime < breakEnd && slotEnd > breakStart) {
                         isBreak = true;
@@ -225,9 +237,11 @@ export async function GET(request: NextRequest) {
                 const appointments = allAppointments?.filter(a => a.stylist_id === stylist.id) || [];
                 let isBooked = false;
                 for (const apt of appointments) {
-                    const [aptH, aptM] = apt.start_time.split(':').map(Number);
-                    const aptStart = aptH * 60 + aptM;
-                    const aptDuration = apt.duration || 60; // Use actual duration from appointment
+                    const aptStart = timeToMinutes(apt.start_time);
+                    if (aptStart === null) continue;
+
+                    const aptDurationNum = Number(apt.duration ?? 60);
+                    const aptDuration = Number.isFinite(aptDurationNum) ? aptDurationNum : 60; // Use actual duration from appointment
                     const aptEnd = aptStart + aptDuration;
 
                     if (currentTime < aptEnd && slotEnd > aptStart) {
