@@ -26,21 +26,21 @@ export const invoicesService = {
         payment_breakdown?: Array<{ method: string; amount: number }>; // NEW: Split payment support
         created_by: string;
     }) {
-        // Validate payment breakdown if provided
+        // Validate payment breakdown if provided (zeros allowed on unused lines; only positive lines are stored)
+        let paymentBreakdownToStore: Array<{ method: string; amount: number }> | null = null;
         if (invoice.payment_breakdown && invoice.payment_breakdown.length > 0) {
-            const breakdownTotal = invoice.payment_breakdown.reduce((sum, p) => sum + p.amount, 0);
-            // Allow small rounding differences (1 cent)
+            if (invoice.payment_breakdown.some(p => p.amount < 0 || Number.isNaN(p.amount))) {
+                throw new Error('Payment amounts cannot be negative');
+            }
+            const cleaned = invoice.payment_breakdown.filter(p => p.amount > 0.001);
+            if (cleaned.length === 0) {
+                throw new Error('At least one payment amount must be greater than 0');
+            }
+            const breakdownTotal = cleaned.reduce((sum, p) => sum + p.amount, 0);
             if (Math.abs(breakdownTotal - invoice.total) > 0.01) {
                 throw new Error(`Payment breakdown total (${breakdownTotal}) does not match invoice total (${invoice.total})`);
             }
-            // Ensure at least 2 payment methods for split
-            if (invoice.payment_breakdown.length < 2) {
-                throw new Error('Split payment requires at least 2 payment methods');
-            }
-            // Ensure all amounts are positive
-            if (invoice.payment_breakdown.some(p => p.amount <= 0)) {
-                throw new Error('All payment amounts must be greater than 0');
-            }
+            paymentBreakdownToStore = cleaned.length > 1 ? cleaned : null;
         }
 
         // For backwards compatibility, use first appointment_id if appointment_ids provided
@@ -54,7 +54,7 @@ export const invoicesService = {
             customer_id: invoice.customer_id,
             total: invoice.total,
             payment_method: invoice.payment_method,
-            payment_breakdown: invoice.payment_breakdown
+            payment_breakdown: paymentBreakdownToStore
         });
 
         const { data, error } = await supabase
@@ -71,7 +71,7 @@ export const invoicesService = {
                 tax: invoice.tax,
                 total: invoice.total,
                 payment_method: invoice.payment_method,
-                payment_breakdown: invoice.payment_breakdown || null // NEW: Store payment breakdown
+                payment_breakdown: paymentBreakdownToStore
             })
             .select()
             .single();
@@ -88,6 +88,32 @@ export const invoicesService = {
             created_at: data.created_at,
             payment_breakdown: data.payment_breakdown
         });
+
+        // Fire-and-forget: create DB-backed in-app notifications for InvoicePaid.
+        // Uses Authorization bearer so the server can resolve the authenticated staff identity safely.
+        try {
+            const sessionRes = await supabase.auth.getSession();
+            const accessToken = sessionRes?.data?.session?.access_token;
+            if (accessToken) {
+                void fetch('/api/in-app-notifications/invoice-paid', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        invoiceId: data.id,
+                        branchId: invoice.branch_id,
+                        customerId: invoice.customer_id,
+                        total: data.total
+                    })
+                }).catch((e) => {
+                    console.error('In-app invoice notification request failed:', e);
+                });
+            }
+        } catch (notifyError) {
+            console.error('Failed to schedule in-app invoice notification:', notifyError);
+        }
 
         // Update earnings for all linked appointments
         const appointmentIds = invoice.appointment_ids || (invoice.appointment_id ? [invoice.appointment_id] : []);

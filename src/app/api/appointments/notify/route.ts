@@ -74,6 +74,10 @@ export async function POST(request: NextRequest) {
 
         // Assume all appointments are for the same customer (multi-service booking)
         const customer = appointments[0].customer as any;
+        const baseBranchId = appointments[0]?.branch_id as string | null;
+
+        // In-app notifications payload (DB-backed)
+        let inAppNotification: { type: string; title: string; message: string } | null = null;
 
         // Initialize SMS service
         const apiKey = process.env.TEXT_LK_API_KEY;
@@ -103,6 +107,14 @@ export async function POST(request: NextRequest) {
             });
 
             const shortDate = new Date(appointments[0].appointment_date).toLocaleDateString();
+
+            inAppNotification = {
+                type: 'AppointmentNew',
+                title: appointments.length === 1 ? 'New appointment booked' : 'New appointments booked',
+                message: appointments.length === 1
+                    ? `${customer?.name || 'Customer'} booked ${appointmentsList[0]} on ${shortDate}.`
+                    : `${customer?.name || 'Customer'} booked ${appointments.length} appointments on ${shortDate}.`
+            };
 
             // Send ONE consolidated SMS to customer
             if (customer?.phone) {
@@ -192,6 +204,12 @@ export async function POST(request: NextRequest) {
             const oldDateStr = oldDate ? new Date(oldDate).toLocaleDateString() : 'previous date';
             const oldTimeStr = oldTime || 'previous time';
 
+            inAppNotification = {
+                type: 'AppointmentRescheduled',
+                title: 'Appointment rescheduled',
+                message: `${customer?.name || 'Customer'} rescheduled from ${oldDateStr} ${oldTimeStr} to ${shortDate} at ${appointment.start_time}.`
+            };
+
             // Customer SMS
             if (customer?.phone) {
                 const msg = `🔄 Appointment Rescheduled! Your ${serviceNames} appointment has been moved to ${shortDate} at ${appointment.start_time}. See you then! - SalonFlow`;
@@ -226,6 +244,68 @@ export async function POST(request: NextRequest) {
                     }
                 }
             }
+        } else if (type === 'cancel') {
+            // In-app cancellation notification (external notification already handled elsewhere)
+            const appointment = appointments[0];
+            const shortDate = new Date(appointment.appointment_date).toLocaleDateString();
+            const appointmentServices = (appointment.services || [])
+                .map((id: string) => servicesMap.get(id))
+                .filter(Boolean)
+                .join(', ') || 'Service';
+
+            inAppNotification = {
+                type: 'AppointmentCancelled',
+                title: 'Appointment cancelled',
+                message: `${customer?.name || 'Customer'} cancelled ${appointmentServices} on ${shortDate} at ${appointment.start_time}.`
+            };
+        }
+
+        // Persist DB-backed in-app notifications for all active staff in this branch.
+        // We never fail the whole request if in-app insert fails (SMS might still be useful).
+        try {
+            if (inAppNotification && baseBranchId) {
+                const { data: staffRecipients, error: staffRecipientsError } = await supabase
+                    .from('staff')
+                    .select('id')
+                    .eq('branch_id', baseBranchId)
+                    .eq('is_active', true);
+
+                if (staffRecipientsError) {
+                    console.error('In-app notification recipient fetch failed:', staffRecipientsError);
+                } else if (staffRecipients && staffRecipients.length > 0) {
+                    const notificationInsert = await supabase
+                        .from('in_app_notifications')
+                        .insert({
+                            type: inAppNotification.type,
+                            title: inAppNotification.title,
+                            message: inAppNotification.message,
+                            branch_id: baseBranchId,
+                            appointment_id: appointments.length === 1 ? appointments[0].id : null,
+                            metadata: {
+                                appointmentIds: idsToProcess
+                            }
+                        })
+                        .select('id')
+                        .single();
+
+                    if (!notificationInsert?.data?.id) {
+                        // supabase-js returns { data, error } - support both shapes
+                        console.error('In-app notification insert returned no id:', notificationInsert);
+                    } else {
+                        const notificationId = notificationInsert.data.id;
+                        await supabase
+                            .from('in_app_notification_recipients')
+                            .insert(
+                                (staffRecipients || []).map((s: any) => ({
+                                    notification_id: notificationId,
+                                    staff_id: s.id
+                                }))
+                            );
+                    }
+                }
+            }
+        } catch (inAppError) {
+            console.error('Failed to persist in-app notifications:', inAppError);
         }
 
         return NextResponse.json({

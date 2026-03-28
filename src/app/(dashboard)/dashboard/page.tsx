@@ -178,7 +178,20 @@ export default function DashboardPage() {
 
     const fetchRecentActivity = async () => {
         try {
-            const activities: { time: string; action: string; customer: string; amount?: number }[] = [];
+            const activities: { createdAtMs: number; time: string; action: string; customer: string; amount?: number }[] = [];
+
+            const toTimeAgo = (createdAt: string | Date) => {
+                const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
+                const now = new Date();
+                const diffMs = now.getTime() - created.getTime();
+                const diffMins = Math.floor(diffMs / 60000);
+
+                if (!Number.isFinite(diffMins)) return 'Just now';
+                if (diffMins < 1) return 'Just now';
+                if (diffMins < 60) return `${diffMins} min ago`;
+                if (diffMins < 1440) return `${Math.floor(diffMins / 60)} hr ago`;
+                return `${Math.floor(diffMins / 1440)} day ago`;
+            };
 
             // Fetch recent invoices (payments)
             const { data: invoices, error: invoicesError } = await supabase
@@ -194,19 +207,11 @@ export default function DashboardPage() {
 
             if (!invoicesError && invoices) {
                 invoices.forEach((invoice: any) => {
-                    const createdAt = new Date(invoice.created_at);
-                    const now = new Date();
-                    const diffMs = now.getTime() - createdAt.getTime();
-                    const diffMins = Math.floor(diffMs / 60000);
-
-                    let timeAgo = '';
-                    if (diffMins < 1) timeAgo = 'Just now';
-                    else if (diffMins < 60) timeAgo = `${diffMins} min ago`;
-                    else if (diffMins < 1440) timeAgo = `${Math.floor(diffMins / 60)} hr ago`;
-                    else timeAgo = `${Math.floor(diffMins / 1440)} day ago`;
+                    const createdAtMs = new Date(invoice.created_at).getTime();
 
                     activities.push({
-                        time: timeAgo,
+                        createdAtMs,
+                        time: toTimeAgo(invoice.created_at),
                         action: 'Payment received',
                         customer: invoice.customers?.name || 'Unknown Customer',
                         amount: invoice.total
@@ -214,13 +219,101 @@ export default function DashboardPage() {
                 });
             }
 
-            // Sort by time (most recent first)
-            return activities.slice(0, 5);
+            // Fetch recent appointment events
+            const { data: appointments, error: appointmentsError } = await supabase
+                .from('appointments')
+                .select(`
+                    id,
+                    status,
+                    created_at,
+                    customer:customers (name),
+                    appointment_date,
+                    start_time
+                `)
+                .order('created_at', { ascending: false })
+                .limit(5);
+
+            if (!appointmentsError && appointments) {
+                appointments.forEach((apt: any) => {
+                    const createdAtMs = new Date(apt.created_at).getTime();
+
+                    let action = 'Appointment updated';
+                    switch (apt.status) {
+                        case 'Pending':
+                        case 'Confirmed':
+                            action = 'Appointment scheduled';
+                            break;
+                        case 'InService':
+                            action = 'Appointment in service';
+                            break;
+                        case 'Completed':
+                            action = 'Appointment completed';
+                            break;
+                        case 'Cancelled':
+                            action = 'Appointment cancelled';
+                            break;
+                        case 'NoShow':
+                            action = 'Customer no-show';
+                            break;
+                        default:
+                            action = `Appointment: ${apt.status}`;
+                    }
+
+                    activities.push({
+                        createdAtMs,
+                        time: toTimeAgo(apt.created_at),
+                        action,
+                        customer: apt.customer?.name || 'Unknown Customer'
+                    });
+                });
+            }
+
+            // Sort by real timestamp (most recent first)
+            return activities
+                .sort((a, b) => b.createdAtMs - a.createdAtMs)
+                .slice(0, 5)
+                .map(({ createdAtMs: _createdAtMs, ...rest }) => rest);
         } catch (error) {
             console.error('Error fetching recent activity:', error);
             return [];
         }
     };
+
+    // Keep "Recent Activity" fresh while the dashboard is open.
+    useEffect(() => {
+        let mounted = true;
+        let intervalId: ReturnType<typeof setInterval> | null = null;
+        let inFlight = false;
+
+        const refresh = async () => {
+            if (!mounted) return;
+            if (inFlight) return;
+            inFlight = true;
+            try {
+                const latest = await fetchRecentActivity();
+                if (!mounted) return;
+                setStats(prev => ({
+                    ...prev,
+                    recentActivity: latest
+                }));
+            } catch (e) {
+                // Ignore polling errors to avoid breaking the dashboard.
+                console.error('Recent Activity polling error:', e);
+            } finally {
+                inFlight = false;
+            }
+        };
+
+        // First refresh after mount.
+        refresh();
+        // Poll every 45 seconds.
+        intervalId = setInterval(refresh, 45_000);
+
+        return () => {
+            mounted = false;
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [user?.id]);
 
     const handleEmergencyToggle = async () => {
         if (!staffId) {

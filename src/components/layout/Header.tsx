@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useRouter } from 'next/navigation';
 import { Menu, X, Bell, LogOut, User, Sun, Moon } from 'lucide-react';
 import Button from '@/components/shared/Button';
+import { supabase } from '@/lib/supabase';
 
 interface HeaderProps {
     onMenuClick: () => void;
@@ -17,6 +18,72 @@ export default function Header({ onMenuClick }: HeaderProps) {
     const router = useRouter();
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [notificationsPreview, setNotificationsPreview] = useState<any[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+    const toTimeAgo = (createdAt: string | Date) => {
+        const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
+        const now = new Date();
+        const diffMs = now.getTime() - created.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        if (!Number.isFinite(diffMins) || diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} min ago`;
+        if (diffMins < 1440) return `${Math.floor(diffMins / 60)} hr ago`;
+        return `${Math.floor(diffMins / 1440)} day ago`;
+    };
+
+    const fetchPreview = async (limit = 5) => {
+        if (!user) return;
+        try {
+            setLoadingNotifications(true);
+            const sessionRes = await supabase.auth.getSession();
+            const accessToken = sessionRes?.data?.session?.access_token;
+            if (!accessToken) return;
+
+            const res = await fetch(`/api/in-app-notifications?limit=${limit}`, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`
+                }
+            });
+
+            const json = await res.json();
+            if (!json?.success) return;
+            setUnreadCount(json.unreadCount || 0);
+            setNotificationsPreview(json.notifications || []);
+        } catch (e) {
+            console.error('Failed to fetch in-app notifications preview:', e);
+        } finally {
+            setLoadingNotifications(false);
+        }
+    };
+
+    const markAllAsRead = async () => {
+        if (!user) return;
+        try {
+            const sessionRes = await supabase.auth.getSession();
+            const accessToken = sessionRes?.data?.session?.access_token;
+            if (!accessToken) return;
+
+            await fetch(`/api/in-app-notifications/mark-read`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({ markAll: true })
+            });
+        } catch (e) {
+            console.error('Failed to mark notifications as read:', e);
+        }
+    };
+
+    useEffect(() => {
+        if (!user) return;
+        // Load unread count on header mount.
+        fetchPreview(5);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     const handleLogout = () => {
         logout();
@@ -57,11 +124,22 @@ export default function Header({ onMenuClick }: HeaderProps) {
                     {/* Notifications */}
                     <div className="relative">
                         <button
-                            onClick={() => setShowNotifications(!showNotifications)}
+                            onClick={async () => {
+                                const next = !showNotifications;
+                                setShowNotifications(next);
+                                if (next) {
+                                    // On open: refresh and mark as read.
+                                    await fetchPreview(5);
+                                    await markAllAsRead();
+                                    await fetchPreview(5);
+                                }
+                            }}
                             className="relative p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors"
                         >
                             <Bell className="h-5 w-5 text-gray-600 dark:text-gray-300" />
-                            <span className="absolute top-1 right-1 w-2 h-2 bg-danger-500 rounded-full"></span>
+                            {unreadCount > 0 && (
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-danger-500 rounded-full"></span>
+                            )}
                         </button>
 
                         {/* Notifications Dropdown */}
@@ -76,22 +154,28 @@ export default function Header({ onMenuClick }: HeaderProps) {
                                         <h3 className="font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
                                     </div>
                                     <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                                        {/* Sample Notifications */}
-                                        <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
-                                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">New appointment booked</p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Sarah Johnson - Hair Cut at 2:00 PM</p>
-                                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">5 minutes ago</p>
-                                        </div>
-                                        <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
-                                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Payment received</p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Rs 2,500 from Mike Smith</p>
-                                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">1 hour ago</p>
-                                        </div>
-                                        <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
-                                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Appointment reminder</p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Emily Davis appointment in 30 minutes</p>
-                                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">2 hours ago</p>
-                                        </div>
+                                        {loadingNotifications ? (
+                                            <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
+                                                Loading...
+                                            </div>
+                                        ) : notificationsPreview.length === 0 ? (
+                                            <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
+                                                No notifications yet.
+                                            </div>
+                                        ) : (
+                                            notificationsPreview.map((n) => (
+                                                <div
+                                                    key={n.id}
+                                                    className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                                                >
+                                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{n.title}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{n.message}</p>
+                                                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                                        {n.createdAt ? toTimeAgo(n.createdAt) : ''}
+                                                    </p>
+                                                </div>
+                                            ))
+                                        )}
                                     </div>
                                     <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 text-center">
                                         <button className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium">

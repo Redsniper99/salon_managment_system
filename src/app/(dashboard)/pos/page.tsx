@@ -655,6 +655,7 @@ export default function POSPage() {
 
             // Reset cart and state
             setCart([]);
+            setPaymentBreakdown(null);
             setDiscount(0);
             setPromoCode('');
             setSelectedCoupon(null);

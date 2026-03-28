@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { PaymentMethod, PaymentBreakdown } from '@/lib/types';
 import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
@@ -28,7 +28,11 @@ export default function SplitPaymentModal({ total, onConfirm, onCancel }: SplitP
 
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
     const remaining = total - totalPaid;
-    const isValid = Math.abs(remaining) < 0.01 && payments.every(p => p.amount > 0) && payments.length >= 2;
+    // Match invoice total; unused lines can be $0 (e.g. full amount on cash only).
+    const isValid =
+        Math.abs(remaining) < 0.01 &&
+        payments.some(p => p.amount > 0) &&
+        payments.every(p => p.amount >= 0 && !Number.isNaN(p.amount));
 
     const updatePaymentAmount = (index: number, amount: number) => {
         const newPayments = [...payments];
@@ -49,15 +53,17 @@ export default function SplitPaymentModal({ total, onConfirm, onCancel }: SplitP
     };
 
     const removePaymentMethod = (index: number) => {
-        if (payments.length > 2) { // Min 2 payment methods
+        if (payments.length > 1) {
             setPayments(payments.filter((_, i) => i !== index));
         }
     };
 
     const handleConfirm = () => {
-        // Determine primary method (the one with highest amount)
-        const primaryMethod = payments.reduce((max, p) => p.amount > max.amount ? p : max).method;
-        onConfirm(payments, primaryMethod);
+        const breakdown = payments.filter(p => p.amount > 0.001);
+        const primaryMethod = breakdown.reduce((max, p) =>
+            p.amount > max.amount ? p : max
+        ).method;
+        onConfirm(breakdown, primaryMethod);
     };
 
     return (
@@ -98,7 +104,7 @@ export default function SplitPaymentModal({ total, onConfirm, onCancel }: SplitP
                                         className="text-right"
                                     />
                                 </div>
-                                {payments.length > 2 && (
+                                {payments.length > 1 && (
                                     <button
                                         onClick={() => removePaymentMethod(index)}
                                         className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
@@ -156,13 +162,15 @@ export default function SplitPaymentModal({ total, onConfirm, onCancel }: SplitP
                     </Button>
                 </div>
 
-                {!isValid && totalPaid > 0 && (
+                {!isValid && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
                         {remaining > 0.01
                             ? `Add ${formatCurrency(remaining)} more to complete payment`
                             : remaining < -0.01
                                 ? `Reduce payment by ${formatCurrency(Math.abs(remaining))}`
-                                : 'All amounts must be greater than 0'
+                                : totalPaid <= 0
+                                    ? 'Enter amounts that add up to the total (one method is fine; leave others at 0)'
+                                    : 'Amounts cannot be negative'
                         }
                     </p>
                 )}

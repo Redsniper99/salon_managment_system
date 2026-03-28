@@ -7,14 +7,22 @@ import Button from '@/components/shared/Button';
 import Input from '@/components/shared/Input';
 import { useAuth } from '@/lib/auth';
 import { notificationsService } from '@/services/notifications';
+import { supabase } from '@/lib/supabase';
 
 export default function NotificationsPage() {
     const { hasRole } = useAuth();
+    const canManageTemplates = hasRole(['Owner', 'Manager']);
+
     const [loading, setLoading] = useState(false);
     const [templates, setTemplates] = useState<any[]>([]);
     const [editingTemplate, setEditingTemplate] = useState<any | null>(null);
     const [isCreating, setIsCreating] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+    const [myNotifications, setMyNotifications] = useState<any[]>([]);
+    const [myUnreadCount, setMyUnreadCount] = useState(0);
+    const [loadingMyNotifications, setLoadingMyNotifications] = useState(false);
+
     const [previewVariables] = useState({
         customer_name: 'John Doe',
         date: new Date().toLocaleDateString(),
@@ -24,8 +32,11 @@ export default function NotificationsPage() {
     });
 
     useEffect(() => {
-        fetchTemplates();
-    }, []);
+        if (canManageTemplates) {
+            fetchTemplates();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [canManageTemplates]);
 
     const fetchTemplates = async () => {
         try {
@@ -87,48 +98,152 @@ export default function NotificationsPage() {
         return notificationsService.replaceVariables(editingTemplate.message, previewVariables);
     };
 
-    if (!hasRole(['Owner', 'Manager'])) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <Bell className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Access Restricted
-                    </h3>
-                    <p className="text-gray-500 dark:text-gray-400">
-                        Only owners and managers can manage notification templates
-                    </p>
-                </div>
-            </div>
-        );
-    }
+    const toTimeAgo = (createdAt: string | Date) => {
+        const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
+        const now = new Date();
+        const diffMs = now.getTime() - created.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        if (!Number.isFinite(diffMins) || diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} min ago`;
+        if (diffMins < 1440) return `${Math.floor(diffMins / 60)} hr ago`;
+        return `${Math.floor(diffMins / 1440)} day ago`;
+    };
+
+    const fetchMyNotifications = async (limit = 10) => {
+        try {
+            setLoadingMyNotifications(true);
+            const sessionRes = await supabase.auth.getSession();
+            const accessToken = sessionRes?.data?.session?.access_token;
+            if (!accessToken) return;
+
+            const res = await fetch(`/api/in-app-notifications?limit=${limit}`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            const json = await res.json();
+            if (!json?.success) return;
+            setMyUnreadCount(json.unreadCount || 0);
+            setMyNotifications(json.notifications || []);
+        } catch (e) {
+            console.error('Failed to fetch my notifications:', e);
+        } finally {
+            setLoadingMyNotifications(false);
+        }
+    };
+
+    const handleMarkAllRead = async () => {
+        try {
+            const sessionRes = await supabase.auth.getSession();
+            const accessToken = sessionRes?.data?.session?.access_token;
+            if (!accessToken) return;
+
+            await fetch('/api/in-app-notifications/mark-read', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({ markAll: true })
+            });
+
+            await fetchMyNotifications(10);
+        } catch (e) {
+            console.error('Failed to mark all as read:', e);
+        }
+    };
+
+    useEffect(() => {
+        fetchMyNotifications(10);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Notification Templates</h1>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">Create and manage customizable notification messages</p>
+            {/* My Notifications */}
+            <div className="card p-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+                <div className="flex items-start justify-between gap-4 mb-5">
+                    <div className="flex items-start gap-3">
+                        <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-xl">
+                            <Bell className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">My Notifications</h2>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                {myUnreadCount} unread
+                            </p>
+                        </div>
+                    </div>
+                    {myUnreadCount > 0 && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleMarkAllRead}
+                        >
+                            Mark all read
+                        </Button>
+                    )}
                 </div>
-                <Button
-                    variant="primary"
-                    leftIcon={<Plus className="h-5 w-5" />}
-                    onClick={() => {
-                        setEditingTemplate({
-                            name: '',
-                            type: 'appointment_confirmation',
-                            channel: 'email',
-                            subject: '',
-                            message: '',
-                            is_active: true
-                        });
-                        setIsCreating(true);
-                    }}
-                >
-                    New Template
-                </Button>
+
+                {loadingMyNotifications ? (
+                    <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">Loading...</div>
+                ) : myNotifications.length === 0 ? (
+                    <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                        No notifications yet.
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {myNotifications.map((n) => (
+                            <div
+                                key={n.id}
+                                className="p-4 rounded-xl bg-gray-50 dark:bg-gray-900/20 border border-gray-100 dark:border-gray-800"
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                            {n.title}
+                                        </p>
+                                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">
+                                            {n.message}
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-col items-end gap-1">
+                                        {!n.isRead && <span className="w-2 h-2 bg-danger-500 rounded-full" />}
+                                        <p className="text-xs text-gray-400">
+                                            {n.createdAt ? toTimeAgo(n.createdAt) : ''}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
+
+            {canManageTemplates && (
+                <>
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Notification Templates</h1>
+                            <p className="text-gray-600 dark:text-gray-400 mt-1">Create and manage customizable notification messages</p>
+                        </div>
+                        <Button
+                            variant="primary"
+                            leftIcon={<Plus className="h-5 w-5" />}
+                            onClick={() => {
+                                setEditingTemplate({
+                                    name: '',
+                                    type: 'appointment_confirmation',
+                                    channel: 'email',
+                                    subject: '',
+                                    message: '',
+                                    is_active: true
+                                });
+                                setIsCreating(true);
+                            }}
+                        >
+                            New Template
+                        </Button>
+                    </div>
 
             {/* Message */}
             {message && (
@@ -365,6 +480,8 @@ export default function NotificationsPage() {
                         </Button>
                     </div>
                 </motion.div>
+            )}
+                </>
             )}
         </div>
     );

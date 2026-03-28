@@ -387,6 +387,21 @@ export const appointmentsService = {
             } catch (notificationError) {
                 console.error('❌ Failed to send cancellation apology:', notificationError);
             }
+
+            // Create DB-backed in-app notifications for all staff in the appointment branch.
+            // External apology notifications remain handled by `notificationsService.sendNotification` above.
+            try {
+                await fetch('/api/appointments/notify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'cancel',
+                        appointmentId: appointment.id
+                    })
+                });
+            } catch (inAppError) {
+                console.error('Failed to persist in-app cancellation notification:', inAppError);
+            }
         }
 
         // Note: Invoice creation and earnings calculation now happens only in POS
