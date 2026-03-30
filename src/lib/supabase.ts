@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -7,8 +8,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.warn('Missing Supabase environment variables - functionality will be limited');
 }
 
-// Client for regular operations (uses anon key)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Browser client that syncs auth tokens to cookies so server actions can read the session.
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 
 // Admin client for server-side operations (uses service role key)
 // This should ONLY be used on the server side, never expose to client

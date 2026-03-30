@@ -17,6 +17,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const PROFILE_LOAD_ERROR =
+    'Your profile could not be loaded. If you are staff, ask the salon owner to fix your account or run the latest database migration.';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -46,7 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return () => subscription.unsubscribe();
     }, []);
 
-    const fetchUserProfile = async (session: Session) => {
+    /** Loads profile for the session. Returns false if missing or RLS blocked (user stays logged out of app UI). */
+    const fetchUserProfile = async (session: Session): Promise<boolean> => {
         try {
             const { data, error } = await supabase
                 .from('profiles')
@@ -54,34 +58,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .eq('id', session.user.id)
                 .single();
 
-            if (error) throw error;
-
-            if (data) {
-                let organizationSlug: string | undefined;
-                let organizationName: string | undefined;
-                if (data.organization_id) {
-                    const { data: org } = await supabase
-                        .from('organizations')
-                        .select('name, slug')
-                        .eq('id', data.organization_id)
-                        .maybeSingle();
-                    organizationSlug = org?.slug;
-                    organizationName = org?.name;
-                }
-                setUser({
-                    id: data.id,
-                    email: data.email,
-                    name: data.name,
-                    role: data.role as UserRole,
-                    branchId: data.branch_id || undefined,
-                    organizationId: data.organization_id as string,
-                    organizationSlug,
-                    organizationName,
-                    isActive: data.is_active,
-                });
+            if (error) {
+                console.error('Error fetching user profile:', error.message, error);
+                setUser(null);
+                return false;
             }
+
+            if (!data) {
+                setUser(null);
+                return false;
+            }
+
+            let organizationSlug: string | undefined;
+            let organizationName: string | undefined;
+            if (data.organization_id) {
+                const { data: org } = await supabase
+                    .from('organizations')
+                    .select('name, slug')
+                    .eq('id', data.organization_id)
+                    .maybeSingle();
+                organizationSlug = org?.slug;
+                organizationName = org?.name;
+            }
+            setUser({
+                id: data.id,
+                email: data.email,
+                name: data.name,
+                role: data.role as UserRole,
+                branchId: data.branch_id || undefined,
+                organizationId: data.organization_id as string,
+                organizationSlug,
+                organizationName,
+                isActive: data.is_active,
+            });
+            return true;
         } catch (error) {
             console.error('Error fetching user profile:', error);
+            setUser(null);
+            return false;
         } finally {
             setLoading(false);
         }
@@ -119,7 +133,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             if (data.session) {
-                await fetchUserProfile(data.session);
+                const ok = await fetchUserProfile(data.session);
+                if (!ok) {
+                    await supabase.auth.signOut();
+                    return { success: false, error: PROFILE_LOAD_ERROR };
+                }
                 return { success: true };
             }
 

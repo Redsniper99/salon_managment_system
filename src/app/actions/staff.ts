@@ -87,6 +87,7 @@ export async function createStaffAction(staffData: {
         }
 
         // 2. Create profile entry (using admin client to bypass RLS if needed)
+        // organization_id must match the branch's tenant or RLS will block reads/writes after login.
         const { error: insertProfileError } = await adminClient
             .from('profiles')
             .insert({
@@ -95,6 +96,7 @@ export async function createStaffAction(staffData: {
                 name: staffData.name,
                 role: staffData.role,
                 branch_id: staffData.branch_id,
+                organization_id: branch.organization_id,
                 is_active: true,
             });
 
@@ -114,6 +116,7 @@ export async function createStaffAction(staffData: {
                 phone: staffData.phone,
                 role: staffData.role,
                 branch_id: staffData.branch_id,
+                organization_id: branch.organization_id,
                 specializations: staffData.specializations || [],
                 working_days: staffData.working_days || [],
                 working_hours: staffData.working_hours,
