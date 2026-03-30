@@ -27,7 +27,7 @@ SELECT
     ARRAY(SELECT id FROM services WHERE category = 'Hair' LIMIT 2),
     ARRAY['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
     '{"start": "09:00", "end": "17:00"}'::jsonb
-FROM branches LIMIT 1;
+FROM branches WHERE name = 'Colombo' LIMIT 1;
 
 INSERT INTO staff (name, email, phone, role, branch_id, is_active, specializations, working_days, working_hours)
 SELECT 
@@ -35,7 +35,7 @@ SELECT
     ARRAY(SELECT id FROM services WHERE category = 'Beard' OR category = 'Hair' LIMIT 2),
     ARRAY['Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
     '{"start": "10:00", "end": "19:00"}'::jsonb
-FROM branches LIMIT 1;
+FROM branches WHERE name = 'Malabe' LIMIT 1;
 
 INSERT INTO staff (name, email, phone, role, branch_id, is_active, specializations, working_days, working_hours)
 SELECT 
@@ -43,14 +43,14 @@ SELECT
     ARRAY(SELECT id FROM services WHERE category = 'Bridal' OR category = 'Facial' LIMIT 2),
     ARRAY['Saturday', 'Sunday', 'Monday', 'Tuesday'],
     '{"start": "09:00", "end": "18:00"}'::jsonb
-FROM branches LIMIT 1;
+FROM branches WHERE name = 'Colombo' LIMIT 1;
 
 -- 4. Create Appointments
 INSERT INTO appointments (customer_id, stylist_id, branch_id, services, appointment_date, start_time, duration, status)
 SELECT 
     c.id as customer_id,
     (SELECT id FROM staff WHERE email = 'mike@salonflow.com' LIMIT 1) as stylist_id,
-    (SELECT id FROM branches LIMIT 1) as branch_id,
+    (SELECT id FROM branches WHERE name = 'Colombo' LIMIT 1) as branch_id,
     ARRAY[(SELECT id FROM services WHERE name = 'Men''s Haircut' LIMIT 1)]::uuid[] as services,
     CURRENT_DATE as appointment_date,
     '10:00' as start_time,
@@ -62,7 +62,7 @@ INSERT INTO appointments (customer_id, stylist_id, branch_id, services, appointm
 SELECT 
     c.id as customer_id,
     (SELECT id FROM staff WHERE email = 'sarah@salonflow.com' LIMIT 1) as stylist_id,
-    (SELECT id FROM branches LIMIT 1) as branch_id,
+    (SELECT id FROM branches WHERE name = 'Colombo' LIMIT 1) as branch_id,
     ARRAY[(SELECT id FROM services WHERE name = 'Women''s Haircut' LIMIT 1)]::uuid[] as services,
     CURRENT_DATE + INTERVAL '1 day' as appointment_date,
     '14:00' as start_time,
@@ -75,7 +75,7 @@ INSERT INTO invoices (invoice_number, customer_id, branch_id, items, subtotal, t
 SELECT 
     'INV-SEED-001',
     c.id,
-    (SELECT id FROM branches LIMIT 1),
+    (SELECT id FROM branches WHERE name = 'Colombo' LIMIT 1),
     '[{"type": "service", "description": "Men''s Haircut", "price": 2500, "quantity": 1}]'::jsonb,
     2500,
     125,
@@ -88,7 +88,7 @@ INSERT INTO invoices (invoice_number, customer_id, branch_id, items, subtotal, t
 SELECT 
     'INV-SEED-002',
     c.id,
-    (SELECT id FROM branches LIMIT 1),
+    (SELECT id FROM branches WHERE name = 'Colombo' LIMIT 1),
     '[{"type": "service", "description": "Hair Coloring", "price": 15000, "quantity": 1}]'::jsonb,
     15000,
     750,

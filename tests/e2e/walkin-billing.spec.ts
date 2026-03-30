@@ -8,16 +8,16 @@ import { test, expect } from '@playwright/test';
 test.describe('Walk-in Customer Billing', () => {
     test.beforeEach(async ({ page }) => {
         // Login (adjust credentials as needed)
-        await page.goto('/login');
+        await page.goto('/admin/login');
         await page.fill('input[type="email"]', process.env.TEST_USER_EMAIL || 'test@salon.com');
         await page.fill('input[type="password"]', process.env.TEST_USER_PASSWORD || 'password');
         await page.click('button[type="submit"]');
-        await page.waitForURL('/dashboard');
+        await page.waitForURL('/admin/dashboard');
     });
 
     test('Complete walk-in customer creation and billing', async ({ page }) => {
         // Navigate to POS
-        await page.goto('/pos');
+        await page.goto('/admin/pos');
         await expect(page.locator('h1:has-text("POS & Billing")')).toBeVisible();
 
         // Search for new customer
@@ -63,7 +63,7 @@ test.describe('Walk-in Customer Billing', () => {
     });
 
     test('Customer search and re-selection', async ({ page }) => {
-        await page.goto('/pos');
+        await page.goto('/admin/pos');
 
         // Type in search
         await page.fill('input[placeholder*="Search"]', '077');
@@ -78,7 +78,7 @@ test.describe('Walk-in Customer Billing', () => {
     });
 
     test('Phone validation shows correct feedback', async ({ page }) => {
-        await page.goto('/pos');
+        await page.goto('/admin/pos');
 
         // Search with invalid number
         await page.fill('input[placeholder*="Search"]', '123');
@@ -89,7 +89,7 @@ test.describe('Walk-in Customer Billing', () => {
     });
 
     test('Walk-in service shows stylist name in cart', async ({ page }) => {
-        await page.goto('/pos');
+        await page.goto('/admin/pos');
 
         // Assume customer already selected
         // Add walk-in service

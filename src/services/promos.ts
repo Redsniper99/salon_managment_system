@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { getCurrentOrganizationId } from '@/lib/org-scope';
 
 export interface PromoCodeInput {
     code: string;
@@ -65,6 +66,7 @@ export const promosService = {
      * Create a new promo code
      */
     async createPromoCode(promoData: PromoCodeInput): Promise<PromoCode> {
+        const organizationId = await getCurrentOrganizationId();
         const { data, error } = await supabase
             .from('promo_codes')
             .insert({
@@ -77,7 +79,8 @@ export const promosService = {
                 usage_limit: promoData.usage_limit || null,
                 used_count: 0,
                 description: promoData.description || null,
-                is_active: promoData.is_active !== undefined ? promoData.is_active : true
+                is_active: promoData.is_active !== undefined ? promoData.is_active : true,
+                organization_id: organizationId,
             })
             .select()
             .single();

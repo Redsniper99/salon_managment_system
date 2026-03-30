@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getRateLimitKey, checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
+import { resolvePublicOrganizationId, assertBranchInOrganization } from '@/lib/public-tenant';
 
 // Use Service Role Key to bypass RLS for booking operations
 const supabase = createClient(
@@ -42,6 +43,20 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { customer, appointment } = body;
 
+        const orgSlug =
+            appointment?.organization_slug ||
+            body.organization_slug ||
+            appointment?.organization_id ||
+            body.organization_id;
+        const resolved = await resolvePublicOrganizationId(supabase, orgSlug);
+        if (!resolved) {
+            return NextResponse.json(
+                { success: false, error: 'organization_slug or organization_id is required and must be valid' },
+                { status: 400 }
+            );
+        }
+        const organizationId = resolved.organizationId;
+
         // Validate required fields
         if (!customer?.name || !customer?.phone) {
             return NextResponse.json(
@@ -75,6 +90,7 @@ export async function POST(request: NextRequest) {
             .select('id, name, duration, price')
             .eq('id', appointment.service_id)
             .eq('is_active', true)
+            .eq('organization_id', organizationId)
             .single();
 
         if (serviceError || !service) {
@@ -105,6 +121,7 @@ export async function POST(request: NextRequest) {
                 .eq('role', 'Stylist')
                 .eq('is_active', true)
                 .eq('is_emergency_unavailable', false)
+                .eq('organization_id', organizationId)
                 .contains('specializations', [appointment.service_id]);
 
             if (qualifiedError || !qualifiedStylists || qualifiedStylists.length === 0) {
@@ -114,8 +131,19 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            // Filter stylists working on this day
-            const stylistsWorkingToday = qualifiedStylists.filter(s =>
+            let branchFiltered = qualifiedStylists;
+            if (appointment.branch_id) {
+                const ok = await assertBranchInOrganization(supabase, appointment.branch_id, organizationId);
+                if (!ok) {
+                    return NextResponse.json(
+                        { success: false, error: 'Invalid branch for this organization' },
+                        { status: 400 }
+                    );
+                }
+                branchFiltered = qualifiedStylists.filter(s => s.branch_id === appointment.branch_id);
+            }
+
+            const stylistsWorkingToday = branchFiltered.filter(s =>
                 !s.working_days || s.working_days.includes(dayOfWeek)
             );
 
@@ -132,8 +160,7 @@ export async function POST(request: NextRequest) {
                 .from('stylist_unavailability')
                 .select('stylist_id')
                 .in('stylist_id', stylistIds)
-                .lte('start_date', appointment.date)
-                .gte('end_date', appointment.date);
+                .eq('unavailable_date', appointment.date);
 
             const unavailableIds = new Set(unavailability?.map(u => u.stylist_id) || []);
             const availableStylists = stylistsWorkingToday.filter(s => !unavailableIds.has(s.id));
@@ -155,7 +182,7 @@ export async function POST(request: NextRequest) {
             // Get all appointments for these stylists on this date
             const { data: allAppointments } = await supabase
                 .from('appointments')
-                .select('stylist_id, start_time, services(duration)')
+                .select('stylist_id, start_time, duration')
                 .in('stylist_id', availableStylistIds)
                 .eq('appointment_date', appointment.date)
                 .neq('status', 'Cancelled');
@@ -199,7 +226,7 @@ export async function POST(request: NextRequest) {
                 for (const apt of appointments) {
                     const [aptH, aptM] = apt.start_time.split(':').map(Number);
                     const aptStart = aptH * 60 + aptM;
-                    const aptDuration = (apt.services as any)?.duration || 60;
+                    const aptDuration = apt.duration || 60;
                     const aptEnd = aptStart + aptDuration;
                     if (reqStart < aptEnd && reqEnd > aptStart) {
                         isBooked = true;
@@ -236,6 +263,7 @@ export async function POST(request: NextRequest) {
                 .select('id, name, branch_id, specializations')
                 .eq('id', appointment.stylist_id)
                 .eq('is_active', true)
+                .eq('organization_id', organizationId)
                 .single();
 
             if (stylistError || !fetchedStylist) {
@@ -260,7 +288,7 @@ export async function POST(request: NextRequest) {
         if (!isNoPreference) {
             const { data: existingAppointments } = await supabase
                 .from('appointments')
-                .select('id, start_time, services(duration)')
+                .select('id, start_time, duration')
                 .eq('stylist_id', selectedStylistId)
                 .eq('appointment_date', appointment.date)
                 .neq('status', 'Cancelled');
@@ -273,7 +301,7 @@ export async function POST(request: NextRequest) {
             for (const existing of existingAppointments || []) {
                 const [existH, existM] = existing.start_time.split(':').map(Number);
                 const existStart = existH * 60 + existM;
-                const existDuration = (existing.services as any)?.duration || 60;
+                const existDuration = existing.duration || 60;
                 const existEnd = existStart + existDuration;
 
                 if (newStart < existEnd && newEnd > existStart) {
@@ -291,7 +319,8 @@ export async function POST(request: NextRequest) {
             .from('customers')
             .select('id')
             .eq('phone', customer.phone)
-            .single();
+            .eq('organization_id', organizationId)
+            .maybeSingle();
 
         if (existingCustomer) {
             customerId = existingCustomer.id;
@@ -314,7 +343,8 @@ export async function POST(request: NextRequest) {
                     phone: customer.phone,
                     email: customer.email || null,
                     gender: customer.gender || 'Other',
-                    is_active: true
+                    is_active: true,
+                    organization_id: organizationId
                 })
                 .select('id')
                 .single();
@@ -330,21 +360,43 @@ export async function POST(request: NextRequest) {
             customerId = newCustomer.id;
         }
 
-        // Create the appointment
+        const branchId = stylist.branch_id;
+        if (!branchId) {
+            return NextResponse.json(
+                { success: false, error: 'Stylist has no branch assigned' },
+                { status: 400 }
+            );
+        }
+        if (appointment.branch_id) {
+            const ok = await assertBranchInOrganization(supabase, appointment.branch_id, organizationId);
+            if (!ok || appointment.branch_id !== branchId) {
+                return NextResponse.json(
+                    { success: false, error: 'branch_id does not match stylist location' },
+                    { status: 400 }
+                );
+            }
+        }
+
+        const timeParts = appointment.time.split(':');
+        const startTime =
+            timeParts.length >= 2
+                ? `${timeParts[0].padStart(2, '0')}:${timeParts[1].padStart(2, '0')}:00`
+                : appointment.time;
+
         const { data: newAppointment, error: appointmentError } = await supabase
             .from('appointments')
             .insert({
                 customer_id: customerId,
-                service_id: appointment.service_id,
                 stylist_id: selectedStylistId,
-                branch_id: stylist.branch_id,
-                date: appointment.date,
-                time: appointment.time,
+                branch_id: branchId,
+                services: [appointment.service_id],
+                appointment_date: appointment.date,
+                start_time: startTime,
+                duration: service.duration,
                 status: 'Pending',
-                notes: appointment.notes || null,
-                payment_status: 'Unpaid'
+                notes: appointment.notes || null
             })
-            .select('id, date, time, status')
+            .select('id, appointment_date, start_time, status')
             .single();
 
         if (appointmentError) {
@@ -414,7 +466,7 @@ export async function POST(request: NextRequest) {
                                     <td style="padding: 8px 0;">${service.name} (${service.duration} mins)</td>
                                 </tr>
                                 <tr>
-                                    <td style="padding: 8px 0;"><strong>👤 Stylist:</strange></td>
+                                    <td style="padding: 8px 0;"><strong>👤 Stylist:</strong></td>
                                     <td style="padding: 8px 0;">${stylist.name}</td>
                                 </tr>
                                 <tr>
@@ -449,13 +501,18 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        const startDisp =
+            typeof newAppointment.start_time === 'string'
+                ? newAppointment.start_time.slice(0, 5)
+                : appointment.time;
+
         return NextResponse.json({
             success: true,
             message: 'Appointment booked successfully',
             data: {
                 appointmentId: newAppointment.id,
-                date: newAppointment.date,
-                time: newAppointment.time,
+                date: newAppointment.appointment_date,
+                time: startDisp,
                 status: newAppointment.status,
                 service: {
                     name: service.name,

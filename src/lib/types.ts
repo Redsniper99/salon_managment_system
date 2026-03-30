@@ -7,6 +7,9 @@ export interface User {
     name: string;
     role: UserRole;
     branchId?: string;
+    organizationId: string;
+    organizationSlug?: string;
+    organizationName?: string;
     isActive: boolean;
 }
 
@@ -146,6 +149,15 @@ export interface Branch {
     address: string;
     phone: string;
     isActive: boolean;
+    organization_id?: string;
+}
+
+export interface Organization {
+    id: string;
+    name: string;
+    slug: string;
+    is_active: boolean;
+    created_at?: string;
 }
 
 // Notification Types

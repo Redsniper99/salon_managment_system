@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Customer } from '@/lib/types';
+import { getCurrentOrganizationId } from '@/lib/org-scope';
 
 export const customersService = {
     async searchCustomers(searchQuery: string) {
@@ -142,9 +143,10 @@ export const customersService = {
         gender?: 'Male' | 'Female' | 'Other';
         preferences?: string;
     }) {
+        const organizationId = await getCurrentOrganizationId();
         const { data, error } = await supabase
             .from('customers')
-            .insert(customer)
+            .insert({ ...customer, organization_id: organizationId })
             .select()
             .single();
 

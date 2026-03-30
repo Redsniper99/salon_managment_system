@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { UserRole } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 import {
     LayoutDashboard,
     Calendar,
@@ -30,6 +31,7 @@ import {
     ChevronRight,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { adminHref, adminPageKey } from '@/lib/admin-paths';
 
 interface NavItem {
     label: string;
@@ -41,103 +43,103 @@ interface NavItem {
 const navItems: NavItem[] = [
     {
         label: 'Dashboard',
-        href: '/dashboard',
+        href: adminHref('/dashboard'),
         icon: LayoutDashboard,
         allowedRoles: ['Owner', 'Manager', 'Receptionist', 'Stylist'],
     },
     {
         label: 'Appointments',
-        href: '/appointments',
+        href: adminHref('/appointments'),
         icon: Calendar,
         allowedRoles: ['Owner', 'Manager', 'Receptionist', 'Stylist'],
     },
     {
         label: 'POS & Billing',
-        href: '/pos',
+        href: adminHref('/pos'),
         icon: ShoppingCart,
         allowedRoles: ['Owner', 'Manager', 'Receptionist'],
     },
     {
         label: 'Services',
-        href: '/services',
+        href: adminHref('/services'),
         icon: Scissors,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Inventory',
-        href: '/inventory',
+        href: adminHref('/inventory'),
         icon: Package,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Staff',
-        href: '/staff',
+        href: adminHref('/staff'),
         icon: Users,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Customers',
-        href: '/customers',
+        href: adminHref('/customers'),
         icon: UserCircle,
         allowedRoles: ['Owner', 'Manager', 'Receptionist'],
     },
     {
         label: 'Earnings',
-        href: '/earnings',
+        href: adminHref('/earnings'),
         icon: DollarSign,
         allowedRoles: ['Owner', 'Manager', 'Stylist', 'Receptionist'],
     },
     {
         label: 'Financial',
-        href: '/financial',
+        href: adminHref('/financial'),
         icon: Wallet,
         allowedRoles: ['Owner', 'Manager', 'Stylist'],
     },
     {
         label: 'Petty Cash',
-        href: '/petty-cash',
+        href: adminHref('/petty-cash'),
         icon: Wallet,
         allowedRoles: ['Owner', 'Manager', 'Receptionist'],
     },
     {
         label: 'Customer Segments',
-        href: '/segments',
+        href: adminHref('/segments'),
         icon: Target,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Promo Codes',
-        href: '/promos',
+        href: adminHref('/promos'),
         icon: Tag,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Loyalty Program',
-        href: '/loyalty',
+        href: adminHref('/loyalty'),
         icon: Gift,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Notifications',
-        href: '/notifications',
+        href: adminHref('/notifications'),
         icon: Bell,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Campaigns',
-        href: '/campaigns',
+        href: adminHref('/campaigns'),
         icon: Megaphone,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Reports',
-        href: '/reports',
+        href: adminHref('/reports'),
         icon: BarChart3,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Settings',
-        href: '/settings',
+        href: adminHref('/settings'),
         icon: Settings,
         allowedRoles: ['Owner', 'Stylist'],
     },
@@ -148,9 +150,47 @@ export default function Sidebar() {
     const { user } = useAuth();
     const [isCollapsed, setIsCollapsed] = useState(false);
 
-    const filteredNavItems = navItems.filter((item) =>
-        user ? item.allowedRoles.includes(user.role) : false
-    );
+    const [pageAccess, setPageAccess] = useState<Record<string, Record<string, boolean>>>({});
+
+    useEffect(() => {
+        if (!user?.organizationId) {
+            setPageAccess({});
+            return;
+        }
+        void (async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('organization_page_access')
+                    .select('page_key, role, allowed')
+                    .eq('organization_id', user.organizationId);
+                if (error) throw error;
+
+                const map: Record<string, Record<string, boolean>> = {};
+                for (const row of data || []) {
+                    if (!map[row.page_key]) map[row.page_key] = {};
+                    map[row.page_key][row.role] = row.allowed;
+                }
+                setPageAccess(map);
+            } catch (e) {
+                // If the table doesn't exist yet, fall back to hard-coded allowedRoles.
+                setPageAccess({});
+            }
+        })();
+    }, [user?.organizationId]);
+
+    const filteredNavItems = useMemo(() => {
+        if (!user) return [];
+        return navItems.filter((item) => {
+            // Owner always sees everything; this matrix is for restricting others.
+            if (user.role === 'Owner') return true;
+
+            const pageKey = adminPageKey(item.href);
+            const forcedAllowed = pageAccess[pageKey]?.[user.role];
+            if (typeof forcedAllowed === 'boolean') return forcedAllowed;
+
+            return item.allowedRoles.includes(user.role);
+        });
+    }, [pageAccess, user]);
 
     return (
         <motion.aside
@@ -180,7 +220,7 @@ export default function Sidebar() {
             {/* Logo Section */}
             <div className={cn('p-6 transition-all', isCollapsed && 'px-4')}>
                 <Link
-                    href="/dashboard"
+                    href={adminHref('/dashboard')}
                     className={cn('flex items-center gap-3', isCollapsed && 'justify-center')}
                 >
                     <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-xl flex-shrink-0">

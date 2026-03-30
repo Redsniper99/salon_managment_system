@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { UserRole } from '@/lib/types';
+import { adminPaths } from '@/lib/admin-paths';
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
@@ -20,12 +21,12 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
         if (loading) return;
 
         if (!isAuthenticated) {
-            router.push('/login');
+            router.push(adminPaths.login);
             return;
         }
 
         if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-            router.push('/dashboard');
+            router.push(adminPaths.dashboard);
         }
     }, [isAuthenticated, user, allowedRoles, router, pathname, loading]);
 

@@ -3,6 +3,7 @@
 import { getAdminClient } from '@/lib/supabase';
 import { sendEmailFromServer } from '@/lib/email-server';
 import { randomBytes } from 'crypto';
+import { getSupabaseServerClient } from '@/lib/supabase-server';
 
 // Utility to generate cryptographically secure random password
 function generatePassword(): string {
@@ -27,7 +28,42 @@ export async function createStaffAction(staffData: {
     working_hours?: { start: string; end: string };
 }) {
     try {
+        // Service-role client bypasses RLS, so we must validate caller explicitly.
+        const supabaseAuthed = await getSupabaseServerClient();
+        const {
+            data: { user },
+            error: authGetError,
+        } = await supabaseAuthed.auth.getUser();
+        if (authGetError || !user) {
+            return { success: false, message: 'Unauthorized' };
+        }
+
+        const { data: callerProfile, error: callerProfileError } = await supabaseAuthed
+            .from('profiles')
+            .select('id, role, organization_id')
+            .eq('id', user.id)
+            .single();
+        if (callerProfileError || !callerProfile) {
+            return { success: false, message: 'Unauthorized' };
+        }
+        if (callerProfile.role !== 'Owner') {
+            return { success: false, message: 'Only the Owner can create staff members.' };
+        }
+
         const adminClient = getAdminClient();
+
+        // Validate branch exists and belongs to the caller's organization.
+        const { data: branch, error: branchError } = await adminClient
+            .from('branches')
+            .select('id, organization_id')
+            .eq('id', staffData.branch_id)
+            .single();
+        if (branchError || !branch) {
+            return { success: false, message: 'Invalid branch.' };
+        }
+        if (branch.organization_id !== callerProfile.organization_id) {
+            return { success: false, message: 'Selected branch does not belong to your organization.' };
+        }
 
         // Generate temporary password
         const tempPassword = generatePassword();
@@ -51,7 +87,7 @@ export async function createStaffAction(staffData: {
         }
 
         // 2. Create profile entry (using admin client to bypass RLS if needed)
-        const { error: profileError } = await adminClient
+        const { error: insertProfileError } = await adminClient
             .from('profiles')
             .insert({
                 id: authData.user.id,
@@ -62,10 +98,10 @@ export async function createStaffAction(staffData: {
                 is_active: true,
             });
 
-        if (profileError) {
+        if (insertProfileError) {
             // Rollback: delete auth user
             await adminClient.auth.admin.deleteUser(authData.user.id);
-            throw profileError;
+            throw insertProfileError;
         }
 
         // 3. Create staff entry
@@ -95,7 +131,7 @@ export async function createStaffAction(staffData: {
         let emailSent = false;
         try {
             const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-            const loginUrl = `${siteUrl}/login`;
+            const loginUrl = `${siteUrl}/admin/login`;
 
             console.log('📧 Attempting to send welcome email to:', staffData.email);
             console.log('🔑 RESEND_API_KEY configured:', !!process.env.RESEND_API_KEY);
@@ -168,6 +204,28 @@ export async function createStaffAction(staffData: {
 
 export async function deleteStaffAction(id: string) {
     try {
+        // Validate caller is Owner (service role bypasses RLS).
+        const supabaseAuthed = await getSupabaseServerClient();
+        const {
+            data: { user },
+            error: authError,
+        } = await supabaseAuthed.auth.getUser();
+        if (authError || !user) {
+            return { success: false, message: 'Unauthorized' };
+        }
+
+        const { data: callerProfile, error: profileError } = await supabaseAuthed
+            .from('profiles')
+            .select('id, role, organization_id')
+            .eq('id', user.id)
+            .single();
+        if (profileError || !callerProfile) {
+            return { success: false, message: 'Unauthorized' };
+        }
+        if (callerProfile.role !== 'Owner') {
+            return { success: false, message: 'Only the Owner can delete staff members.' };
+        }
+
         const adminClient = getAdminClient();
 
         // Get profile_id first

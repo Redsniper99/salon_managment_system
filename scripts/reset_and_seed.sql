@@ -98,58 +98,74 @@ INSERT INTO services (id, name, category, price, duration, gender, is_active, de
 -- Get the branch ID (assuming one exists from profile creation)
 -- If no branch exists, you need to create one first
 
--- First check if branch exists, if not create one
-INSERT INTO branches (id, name, address, phone, is_active)
-SELECT 
-    '22222222-2222-2222-2222-222222222201',
-    'Main Salon',
-    '123 Beauty Street, Colombo',
-    '0112345678',
-    true
-WHERE NOT EXISTS (SELECT 1 FROM branches LIMIT 1);
-
--- Get branch ID for staff
+-- Create Colombo + Malabe when there are no branches yet (multi-tenant: include organization_id)
 DO $$
 DECLARE
-    branch_uuid uuid;
+  v_org uuid;
+BEGIN
+  IF EXISTS (SELECT 1 FROM branches LIMIT 1) THEN
+    RETURN;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'branches' AND column_name = 'organization_id'
+  ) THEN
+    SELECT id INTO v_org FROM organizations WHERE slug = 'default' LIMIT 1;
+    INSERT INTO branches (id, name, address, phone, is_active, organization_id) VALUES
+      ('22222222-2222-2222-2222-222222222201', 'Colombo', 'No. 12, Galle Road, Colombo 03', '0112345678', true, v_org),
+      ('22222222-2222-2222-2222-222222222202', 'Malabe', '45 Kaduwela Road, Malabe', '0112345679', true, v_org);
+  ELSE
+    INSERT INTO branches (id, name, address, phone, is_active) VALUES
+      ('22222222-2222-2222-2222-222222222201', 'Colombo', 'No. 12, Galle Road, Colombo 03', '0112345678', true),
+      ('22222222-2222-2222-2222-222222222202', 'Malabe', '45 Kaduwela Road, Malabe', '0112345679', true);
+  END IF;
+END $$;
+
+-- Staff: split across Colombo and Malabe
+DO $$
+DECLARE
+    colombo_id uuid;
+    malabe_id uuid;
     all_services uuid[];
 BEGIN
-    -- Get or create branch
-    SELECT id INTO branch_uuid FROM branches LIMIT 1;
-    
-    -- Get all service IDs
+    SELECT id INTO colombo_id FROM branches WHERE name = 'Colombo' ORDER BY created_at LIMIT 1;
+    SELECT id INTO malabe_id FROM branches WHERE name = 'Malabe' ORDER BY created_at LIMIT 1;
+    IF colombo_id IS NULL THEN
+      SELECT id INTO colombo_id FROM branches LIMIT 1;
+    END IF;
+    IF malabe_id IS NULL THEN
+      malabe_id := colombo_id;
+    END IF;
+
     SELECT array_agg(id) INTO all_services FROM services;
-    
-    -- Insert Staff Members
+
     INSERT INTO staff (id, name, phone, role, branch_id, specializations, working_days, working_hours, is_active) VALUES
-    -- Senior Stylists (all services)
-    ('33333333-3333-3333-3333-333333333301', 'Nimal Perera', '0771234501', 'Stylist', branch_uuid, 
+    ('33333333-3333-3333-3333-333333333301', 'Nimal Perera', '0771234501', 'Stylist', colombo_id,
      all_services,
      ARRAY['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
      '{"Monday": {"start": "09:00", "end": "18:00"}, "Tuesday": {"start": "09:00", "end": "18:00"}, "Wednesday": {"start": "09:00", "end": "18:00"}, "Thursday": {"start": "09:00", "end": "18:00"}, "Friday": {"start": "09:00", "end": "18:00"}, "Saturday": {"start": "09:00", "end": "14:00"}}'::jsonb,
      true),
-    
-    ('33333333-3333-3333-3333-333333333302', 'Kumari Silva', '0771234502', 'Stylist', branch_uuid,
+
+    ('33333333-3333-3333-3333-333333333302', 'Kumari Silva', '0771234502', 'Stylist', malabe_id,
      all_services,
      ARRAY['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
      '{"Monday": {"start": "09:00", "end": "18:00"}, "Tuesday": {"start": "09:00", "end": "18:00"}, "Wednesday": {"start": "09:00", "end": "18:00"}, "Thursday": {"start": "09:00", "end": "18:00"}, "Friday": {"start": "09:00", "end": "18:00"}, "Saturday": {"start": "09:00", "end": "14:00"}}'::jsonb,
      true),
-    
-    ('33333333-3333-3333-3333-333333333303', 'Anjali Fernando', '0771234503', 'Stylist', branch_uuid,
+
+    ('33333333-3333-3333-3333-333333333303', 'Anjali Fernando', '0771234503', 'Stylist', colombo_id,
      all_services,
      ARRAY['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
      '{"Monday": {"start": "10:00", "end": "19:00"}, "Tuesday": {"start": "10:00", "end": "19:00"}, "Wednesday": {"start": "10:00", "end": "19:00"}, "Thursday": {"start": "10:00", "end": "19:00"}, "Friday": {"start": "10:00", "end": "19:00"}}'::jsonb,
      true),
-    
-    -- Manager
-    ('33333333-3333-3333-3333-333333333304', 'Suresh Jayawardena', '0771234504', 'Manager', branch_uuid,
+
+    ('33333333-3333-3333-3333-333333333304', 'Suresh Jayawardena', '0771234504', 'Manager', colombo_id,
      all_services,
      ARRAY['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
      '{"Monday": {"start": "08:00", "end": "17:00"}, "Tuesday": {"start": "08:00", "end": "17:00"}, "Wednesday": {"start": "08:00", "end": "17:00"}, "Thursday": {"start": "08:00", "end": "17:00"}, "Friday": {"start": "08:00", "end": "17:00"}, "Saturday": {"start": "09:00", "end": "14:00"}}'::jsonb,
      true),
-    
-    -- Receptionist
-    ('33333333-3333-3333-3333-333333333305', 'Dilani Rathnayake', '0771234505', 'Receptionist', branch_uuid,
+
+    ('33333333-3333-3333-3333-333333333305', 'Dilani Rathnayake', '0771234505', 'Receptionist', colombo_id,
      ARRAY[]::uuid[],
      ARRAY['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
      '{"Monday": {"start": "09:00", "end": "18:00"}, "Tuesday": {"start": "09:00", "end": "18:00"}, "Wednesday": {"start": "09:00", "end": "18:00"}, "Thursday": {"start": "09:00", "end": "18:00"}, "Friday": {"start": "09:00", "end": "18:00"}, "Saturday": {"start": "09:00", "end": "14:00"}}'::jsonb,

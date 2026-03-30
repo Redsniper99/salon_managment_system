@@ -11,6 +11,7 @@ export const appointmentsService = {
         date?: string;
         status?: AppointmentStatus;
         stylistId?: string;
+        branchId?: string;
     }) {
         // Get current user
         const { data: { user } } = await supabase.auth.getUser();
@@ -60,6 +61,10 @@ export const appointmentsService = {
 
         if (stylistFilterId) {
             query = query.eq('stylist_id', stylistFilterId);
+        }
+
+        if (filters?.branchId) {
+            query = query.eq('branch_id', filters.branchId);
         }
 
         const { data, error } = await query;

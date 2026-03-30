@@ -1,8 +1,10 @@
 import { supabase } from '@/lib/supabase';
+import { getCurrentOrganizationId } from '@/lib/org-scope';
 
 // Types
 export interface LoyaltySettings {
     id: string;
+    organization_id?: string;
     option_card_enabled: boolean;
     option_points_enabled: boolean;
     option_visits_enabled: boolean;
@@ -17,6 +19,7 @@ export interface LoyaltySettings {
 
 export interface LoyaltyCard {
     id: string;
+    organization_id?: string;
     card_number: string;
     status: 'available' | 'sold' | 'expired' | 'cancelled';
     customer_id: string | null;
@@ -73,52 +76,73 @@ const DEFAULT_SETTINGS: Omit<LoyaltySettings, 'id'> = {
     visit_reward_discount_percent: 15
 };
 
+/** At most one program active: card > points > visits if legacy data had multiple. */
+export function normalizeLoyaltyProgramFlags(s: LoyaltySettings): LoyaltySettings {
+    const { option_card_enabled: c, option_points_enabled: p, option_visits_enabled: v } = s;
+    const n = [c, p, v].filter(Boolean).length;
+    if (n <= 1) return s;
+    if (c) return { ...s, option_points_enabled: false, option_visits_enabled: false };
+    if (p) return { ...s, option_card_enabled: false, option_visits_enabled: false };
+    return { ...s, option_card_enabled: false, option_points_enabled: false };
+}
+
 export const loyaltyService = {
     // =====================
     // SETTINGS MANAGEMENT
     // =====================
 
     async getSettings(): Promise<LoyaltySettings> {
+        const organizationId = await getCurrentOrganizationId();
         const { data, error } = await supabase
             .from('loyalty_settings')
             .select('*')
-            .single();
+            .eq('organization_id', organizationId)
+            .maybeSingle();
 
         if (error || !data) {
-            // Return defaults if not found
-            return { id: '', ...DEFAULT_SETTINGS };
+            return normalizeLoyaltyProgramFlags({ id: '', organization_id: organizationId, ...DEFAULT_SETTINGS });
         }
-        return data;
+        return normalizeLoyaltyProgramFlags(data as LoyaltySettings);
     },
 
     async updateSettings(updates: Partial<LoyaltySettings>): Promise<LoyaltySettings> {
-        // First check if settings exist
+        const organizationId = await getCurrentOrganizationId();
         const { data: existing } = await supabase
             .from('loyalty_settings')
-            .select('id')
-            .single();
+            .select('*')
+            .eq('organization_id', organizationId)
+            .maybeSingle();
 
-        if (existing) {
+        const base: LoyaltySettings = existing
+            ? (existing as LoyaltySettings)
+            : { id: '', organization_id: organizationId, ...DEFAULT_SETTINGS };
+        const merged = normalizeLoyaltyProgramFlags({ ...base, ...updates, organization_id: organizationId });
+
+        if (existing?.id) {
             const { data, error } = await supabase
                 .from('loyalty_settings')
-                .update(updates)
+                .update(merged)
                 .eq('id', existing.id)
                 .select()
                 .single();
 
             if (error) throw error;
-            return data;
-        } else {
-            // Create new settings
-            const { data, error } = await supabase
-                .from('loyalty_settings')
-                .insert({ ...DEFAULT_SETTINGS, ...updates })
-                .select()
-                .single();
-
-            if (error) throw error;
-            return data;
+            return normalizeLoyaltyProgramFlags(data as LoyaltySettings);
         }
+
+        const { id: _omit, ...insertPayload } = merged;
+        const { data, error } = await supabase
+            .from('loyalty_settings')
+            .insert({
+                ...DEFAULT_SETTINGS,
+                ...insertPayload,
+                organization_id: organizationId,
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return normalizeLoyaltyProgramFlags(data as LoyaltySettings);
     },
 
     // =====================
@@ -126,17 +150,18 @@ export const loyaltyService = {
     // =====================
 
     async generateCards(count: number): Promise<LoyaltyCard[]> {
+        const organizationId = await getCurrentOrganizationId();
         const settings = await this.getSettings();
         const cards = [];
         const year = new Date().getFullYear();
 
-        // Get current max card number
         const { data: lastCard } = await supabase
             .from('loyalty_cards')
             .select('card_number')
+            .eq('organization_id', organizationId)
             .order('created_at', { ascending: false })
             .limit(1)
-            .single();
+            .maybeSingle();
 
         let startNum = 1;
         if (lastCard?.card_number) {
@@ -146,6 +171,7 @@ export const loyaltyService = {
 
         for (let i = 0; i < count; i++) {
             cards.push({
+                organization_id: organizationId,
                 card_number: `LC-${year}-${String(startNum + i).padStart(5, '0')}`,
                 status: 'available',
                 customer_id: null,
@@ -168,9 +194,11 @@ export const loyaltyService = {
     },
 
     async getCardInventory(): Promise<{ available: number; sold: number; expired: number; total: number; cards: LoyaltyCard[] }> {
+        const organizationId = await getCurrentOrganizationId();
         const { data, error } = await supabase
             .from('loyalty_cards')
             .select('*')
+            .eq('organization_id', organizationId)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -186,9 +214,11 @@ export const loyaltyService = {
     },
 
     async getAvailableCards(): Promise<LoyaltyCard[]> {
+        const organizationId = await getCurrentOrganizationId();
         const { data, error } = await supabase
             .from('loyalty_cards')
             .select('*')
+            .eq('organization_id', organizationId)
             .eq('status', 'available')
             .order('card_number');
 
@@ -202,6 +232,7 @@ export const loyaltyService = {
         expiryDate.setDate(expiryDate.getDate() + settings.card_validity_days);
 
         // Update card status
+        const organizationId = await getCurrentOrganizationId();
         const { data: card, error: cardError } = await supabase
             .from('loyalty_cards')
             .update({
@@ -213,13 +244,13 @@ export const loyaltyService = {
                 invoice_id: invoiceId || null
             })
             .eq('id', cardId)
+            .eq('organization_id', organizationId)
             .eq('status', 'available')
             .select()
             .single();
 
         if (cardError) throw cardError;
 
-        // Update or create customer loyalty record
         await this.ensureCustomerLoyalty(customerId);
 
         const { error: updateError } = await supabase
@@ -229,10 +260,18 @@ export const loyaltyService = {
 
         if (updateError) throw updateError;
 
-        // Record transaction
         await this.recordTransaction(customerId, 'card_purchased', settings.card_price, invoiceId, `Loyalty card ${card.card_number} purchased`);
 
         return card;
+    },
+
+    /** Sell the next available card from org inventory (POS). */
+    async sellNextAvailableCard(customerId: string, soldBy: string, invoiceId?: string): Promise<LoyaltyCard> {
+        const available = await this.getAvailableCards();
+        if (available.length === 0) {
+            throw new Error('No loyalty cards in stock. Generate cards under Loyalty Program.');
+        }
+        return this.sellCard(available[0].id, customerId, soldBy, invoiceId);
     },
 
     async getCustomerCard(customerId: string): Promise<LoyaltyCard | null> {
@@ -496,24 +535,33 @@ export const loyaltyService = {
     // =====================
 
     async ensureCustomerLoyalty(customerId: string): Promise<void> {
-        const { data } = await supabase
+        const { data: existing } = await supabase
             .from('customer_loyalty')
             .select('id')
             .eq('customer_id', customerId)
+            .maybeSingle();
+
+        if (existing) return;
+
+        const { data: customer, error: custErr } = await supabase
+            .from('customers')
+            .select('organization_id')
+            .eq('id', customerId)
             .single();
 
-        if (!data) {
-            await supabase
-                .from('customer_loyalty')
-                .insert({
-                    customer_id: customerId,
-                    loyalty_card_id: null,
-                    total_points: 0,
-                    redeemed_points: 0,
-                    total_visits: 0,
-                    last_reward_visit: 0
-                });
+        if (custErr || !customer?.organization_id) {
+            throw new Error('Customer not found or missing organization');
         }
+
+        await supabase.from('customer_loyalty').insert({
+            organization_id: customer.organization_id,
+            customer_id: customerId,
+            loyalty_card_id: null,
+            total_points: 0,
+            redeemed_points: 0,
+            total_visits: 0,
+            last_reward_visit: 0
+        });
     },
 
     async recordTransaction(
@@ -523,15 +571,15 @@ export const loyaltyService = {
         invoiceId?: string,
         description?: string
     ): Promise<void> {
-        await supabase
-            .from('loyalty_transactions')
-            .insert({
-                customer_id: customerId,
-                type,
-                amount,
-                invoice_id: invoiceId || null,
-                description: description || ''
-            });
+        const organizationId = await getCurrentOrganizationId();
+        await supabase.from('loyalty_transactions').insert({
+            organization_id: organizationId,
+            customer_id: customerId,
+            type,
+            amount,
+            invoice_id: invoiceId || null,
+            description: description || ''
+        });
     },
 
     async getTransactionHistory(customerId: string, limit = 20): Promise<any[]> {

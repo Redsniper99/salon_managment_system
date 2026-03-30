@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { getAdminClient } from '@/lib/supabase';
+import { resolvePublicOrganizationId } from '@/lib/public-tenant';
 
-// Use Service Role Key to bypass RLS and read appointments
 const supabase = getAdminClient();
 
 interface TimeSlot {
@@ -27,6 +26,16 @@ export async function GET(request: NextRequest) {
         const stylistId = searchParams.get('stylist_id');
         const date = searchParams.get('date');
         const duration = parseInt(searchParams.get('duration') || '60', 10);
+        const orgSlug = searchParams.get('organization_slug') || searchParams.get('organization_id');
+
+        const resolved = await resolvePublicOrganizationId(supabase, orgSlug);
+        if (!resolved) {
+            return NextResponse.json(
+                { success: false, error: 'organization_slug or organization_id is required and must be valid' },
+                { status: 400 }
+            );
+        }
+        const organizationId = resolved.organizationId;
 
         if (!stylistId || !date) {
             return NextResponse.json(
@@ -52,6 +61,7 @@ export async function GET(request: NextRequest) {
             .from('staff')
             .select('id, name, working_days, working_hours, is_emergency_unavailable')
             .eq('id', stylistId)
+            .eq('organization_id', organizationId)
             .single();
 
         if (stylistError || !stylist) {
@@ -99,7 +109,8 @@ export async function GET(request: NextRequest) {
         const { data: settings } = await supabase
             .from('salon_settings')
             .select('slot_interval')
-            .single();
+            .eq('organization_id', organizationId)
+            .maybeSingle();
 
         const slotInterval = settings?.slot_interval || 30;
 

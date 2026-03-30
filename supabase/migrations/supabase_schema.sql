@@ -298,9 +298,10 @@ CREATE TRIGGER set_invoice_number BEFORE INSERT ON invoices
 -- SEED DATA (Optional - for testing)
 -- =====================================================
 
--- Insert default branch
+-- Default branches (Colombo + Malabe)
 INSERT INTO branches (name, address, phone) VALUES
-  ('Main Branch', '123 Beauty Street, City', '+1234567890');
+  ('Colombo', 'No. 12, Galle Road, Colombo 03', '+94 11 234 5678'),
+  ('Malabe', '45 Kaduwela Road, Malabe', '+94 11 555 0100');
 
 -- Insert sample services
 INSERT INTO services (name, category, price, duration, gender) VALUES

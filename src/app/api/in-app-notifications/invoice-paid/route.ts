@@ -46,6 +46,19 @@ export async function POST(request: NextRequest) {
             auth: { persistSession: false, autoRefreshToken: false }
         });
 
+        const { data: invoiceRow, error: invoiceLookupError } = await supabaseAdmin
+            .from('invoices')
+            .select('organization_id')
+            .eq('id', invoiceId)
+            .single();
+
+        if (invoiceLookupError || !invoiceRow?.organization_id) {
+            return NextResponse.json(
+                { success: false, error: invoiceLookupError?.message || 'Invoice not found' },
+                { status: 404 }
+            );
+        }
+
         const { data: customer, error: customerError } = await supabaseAdmin
             .from('customers')
             .select('name')
@@ -87,6 +100,7 @@ export async function POST(request: NextRequest) {
                 title,
                 message,
                 branch_id: branchId,
+                organization_id: invoiceRow.organization_id,
                 invoice_id: invoiceId,
                 created_by: authedProfileId
             })

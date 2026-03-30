@@ -280,6 +280,7 @@ export async function POST(request: NextRequest) {
                             title: inAppNotification.title,
                             message: inAppNotification.message,
                             branch_id: baseBranchId,
+                            organization_id: (appointments[0] as { organization_id?: string }).organization_id,
                             appointment_id: appointments.length === 1 ? appointments[0].id : null,
                             metadata: {
                                 appointmentIds: idsToProcess

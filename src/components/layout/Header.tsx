@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { useWorkspace } from '@/lib/workspace';
 import { useTheme } from '@/lib/theme';
 import { useRouter } from 'next/navigation';
 import { Menu, X, Bell, LogOut, User, Sun, Moon } from 'lucide-react';
 import Button from '@/components/shared/Button';
 import { supabase } from '@/lib/supabase';
+import { branchPickerLabel } from '@/lib/branch-display';
+import { adminPaths } from '@/lib/admin-paths';
 
 interface HeaderProps {
     onMenuClick: () => void;
@@ -14,6 +17,14 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick }: HeaderProps) {
     const { user, logout } = useAuth();
+    const { branches, branchScope, setBranchScope } = useWorkspace();
+    const showBranchPicker = user && user.role === 'Owner' && branches.length > 0;
+    const assignedBranchLabel = useMemo(() => {
+        if (!user?.branchId) return undefined;
+        const b = branches.find(br => br.id === user.branchId);
+        if (!b) return undefined;
+        return branchPickerLabel(b, branches);
+    }, [branches, user?.branchId]);
     const { theme, toggleTheme } = useTheme();
     const router = useRouter();
     const [showUserMenu, setShowUserMenu] = useState(false);
@@ -33,20 +44,39 @@ export default function Header({ onMenuClick }: HeaderProps) {
         return `${Math.floor(diffMins / 1440)} day ago`;
     };
 
+    /** Prefer a fresh access token; retry once after refresh on 401 (avoids flaky getSession on first paint). */
+    const fetchWithSupabaseAuth = async (url: string, init: RequestInit = {}) => {
+        const getToken = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token) return session.access_token;
+            const { data } = await supabase.auth.refreshSession();
+            return data.session?.access_token ?? null;
+        };
+
+        let token = await getToken();
+        if (!token) return null;
+
+        const headers = new Headers(init.headers);
+        headers.set('Authorization', `Bearer ${token}`);
+
+        let res = await fetch(url, { ...init, headers });
+
+        if (res.status === 401) {
+            const { data } = await supabase.auth.refreshSession();
+            token = data.session?.access_token ?? null;
+            if (!token) return res;
+            headers.set('Authorization', `Bearer ${token}`);
+            res = await fetch(url, { ...init, headers });
+        }
+        return res;
+    };
+
     const fetchPreview = async (limit = 5) => {
         if (!user) return;
         try {
             setLoadingNotifications(true);
-            const sessionRes = await supabase.auth.getSession();
-            const accessToken = sessionRes?.data?.session?.access_token;
-            if (!accessToken) return;
-
-            const res = await fetch(`/api/in-app-notifications?limit=${limit}`, {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`
-                }
-            });
-
+            const res = await fetchWithSupabaseAuth(`/api/in-app-notifications?limit=${limit}`);
+            if (!res) return;
             const json = await res.json();
             if (!json?.success) return;
             setUnreadCount(json.unreadCount || 0);
@@ -61,17 +91,10 @@ export default function Header({ onMenuClick }: HeaderProps) {
     const markAllAsRead = async () => {
         if (!user) return;
         try {
-            const sessionRes = await supabase.auth.getSession();
-            const accessToken = sessionRes?.data?.session?.access_token;
-            if (!accessToken) return;
-
-            await fetch(`/api/in-app-notifications/mark-read`, {
+            await fetchWithSupabaseAuth(`/api/in-app-notifications/mark-read`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${accessToken}`
-                },
-                body: JSON.stringify({ markAll: true })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ markAll: true }),
             });
         } catch (e) {
             console.error('Failed to mark notifications as read:', e);
@@ -87,7 +110,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
     const handleLogout = () => {
         logout();
-        router.push('/login');
+        router.push(adminPaths.login);
     };
 
     return (
@@ -108,6 +131,38 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
                 {/* Right Side - Theme Toggle, Notifications & User */}
                 <div className="flex items-center gap-3">
+                    {showBranchPicker && (
+                        <div className="flex items-center gap-2 min-w-0">
+                            <label htmlFor="header-branch-scope" className="sr-only">
+                                Location
+                            </label>
+                            <select
+                                id="header-branch-scope"
+                                value={
+                                    branches.some(b => b.id === branchScope) || branchScope === 'all'
+                                        ? branchScope
+                                        : 'all'
+                                }
+                                onChange={e => setBranchScope(e.target.value as 'all' | string)}
+                                className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 max-w-[10rem] lg:max-w-[14rem] shrink-0"
+                            >
+                                <option value="all">All locations</option>
+                                {branches.map(b => (
+                                    <option key={b.id} value={b.id}>
+                                        {branchPickerLabel(b, branches)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    {!showBranchPicker && assignedBranchLabel && (
+                        <span
+                            className="text-sm text-gray-600 dark:text-gray-300 truncate max-w-[10rem] lg:max-w-[14rem] shrink-0"
+                            title={assignedBranchLabel}
+                        >
+                            {assignedBranchLabel}
+                        </span>
+                    )}
                     {/* Theme Toggle */}
                     <button
                         onClick={toggleTheme}

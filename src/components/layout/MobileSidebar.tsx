@@ -1,10 +1,12 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { UserRole } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 import { X } from 'lucide-react';
 import {
     LayoutDashboard,
@@ -27,6 +29,7 @@ import {
     Package,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { adminHref, adminPageKey } from '@/lib/admin-paths';
 
 interface NavItem {
     label: string;
@@ -38,97 +41,97 @@ interface NavItem {
 const navItems: NavItem[] = [
     {
         label: 'Dashboard',
-        href: '/dashboard',
+        href: adminHref('/dashboard'),
         icon: LayoutDashboard,
         allowedRoles: ['Owner', 'Manager', 'Receptionist', 'Stylist'],
     },
     {
         label: 'Appointments',
-        href: '/appointments',
+        href: adminHref('/appointments'),
         icon: Calendar,
         allowedRoles: ['Owner', 'Manager', 'Receptionist', 'Stylist'],
     },
     {
         label: 'POS & Billing',
-        href: '/pos',
+        href: adminHref('/pos'),
         icon: ShoppingCart,
         allowedRoles: ['Owner', 'Manager', 'Receptionist'],
     },
     {
         label: 'Services',
-        href: '/services',
+        href: adminHref('/services'),
         icon: Scissors,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Inventory',
-        href: '/inventory',
+        href: adminHref('/inventory'),
         icon: Package,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Staff',
-        href: '/staff',
+        href: adminHref('/staff'),
         icon: Users,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Customers',
-        href: '/customers',
+        href: adminHref('/customers'),
         icon: UserCircle,
         allowedRoles: ['Owner', 'Manager', 'Receptionist'],
     },
     {
         label: 'Earnings',
-        href: '/earnings',
+        href: adminHref('/earnings'),
         icon: DollarSign,
         allowedRoles: ['Owner', 'Manager', 'Stylist', 'Receptionist'],
     },
     {
         label: 'Financial',
-        href: '/financial',
+        href: adminHref('/financial'),
         icon: Wallet,
         allowedRoles: ['Owner', 'Manager', 'Stylist'],
     },
     {
         label: 'Customer Segments',
-        href: '/segments',
+        href: adminHref('/segments'),
         icon: Target,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Promo Codes',
-        href: '/promos',
+        href: adminHref('/promos'),
         icon: Tag,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Loyalty Program',
-        href: '/loyalty',
+        href: adminHref('/loyalty'),
         icon: Gift,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Notifications',
-        href: '/notifications',
+        href: adminHref('/notifications'),
         icon: Bell,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Campaigns',
-        href: '/campaigns',
+        href: adminHref('/campaigns'),
         icon: Megaphone,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Reports',
-        href: '/reports',
+        href: adminHref('/reports'),
         icon: BarChart3,
         allowedRoles: ['Owner', 'Manager'],
     },
     {
         label: 'Settings',
-        href: '/settings',
+        href: adminHref('/settings'),
         icon: Settings,
         allowedRoles: ['Owner', 'Stylist'],
     },
@@ -143,9 +146,48 @@ export default function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
     const pathname = usePathname();
     const { user } = useAuth();
 
-    const filteredNavItems = navItems.filter((item) =>
-        user ? item.allowedRoles.includes(user.role) : false
-    );
+    const [pageAccess, setPageAccess] = useState<Record<string, Record<string, boolean>>>({});
+
+    useEffect(() => {
+        if (!user?.organizationId) {
+            setPageAccess({});
+            return;
+        }
+
+        void (async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('organization_page_access')
+                    .select('page_key, role, allowed')
+                    .eq('organization_id', user.organizationId);
+                if (error) throw error;
+
+                const map: Record<string, Record<string, boolean>> = {};
+                for (const row of data || []) {
+                    if (!map[row.page_key]) map[row.page_key] = {};
+                    map[row.page_key][row.role] = row.allowed;
+                }
+                setPageAccess(map);
+            } catch {
+                // If the table doesn't exist yet, fall back to hard-coded allowedRoles.
+                setPageAccess({});
+            }
+        })();
+    }, [user?.organizationId]);
+
+    const filteredNavItems = useMemo(() => {
+        if (!user) return [];
+
+        return navItems.filter((item) => {
+            if (user.role === 'Owner') return true;
+
+            const pageKey = adminPageKey(item.href);
+            const forcedAllowed = pageAccess[pageKey]?.[user.role];
+            if (typeof forcedAllowed === 'boolean') return forcedAllowed;
+
+            return item.allowedRoles.includes(user.role);
+        });
+    }, [pageAccess, user]);
 
     return (
         <AnimatePresence>
@@ -169,7 +211,7 @@ export default function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
                         className="fixed left-0 top-0 bottom-0 w-64 max-w-[85vw] bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-50 lg:hidden flex flex-col"
                     >
                         <div className="p-6 flex items-center justify-between border-b border-gray-200 dark:border-gray-700">
-                            <Link href="/dashboard" className="flex items-center gap-3" onClick={onClose}>
+                            <Link href={adminHref('/dashboard')} className="flex items-center gap-3" onClick={onClose}>
                                 <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-xl">
                                     <Scissors className="h-6 w-6 text-primary-600 dark:text-primary-400" />
                                 </div>

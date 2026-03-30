@@ -7,15 +7,15 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Appointment Creation', () => {
     test.beforeEach(async ({ page }) => {
-        await page.goto('/login');
+        await page.goto('/admin/login');
         await page.fill('input[type="email"]', process.env.TEST_USER_EMAIL || 'test@salon.com');
         await page.fill('input[type="password"]', process.env.TEST_USER_PASSWORD || 'password');
         await page.click('button[type="submit"]');
-        await page.waitForURL('/dashboard');
+        await page.waitForURL('/admin/dashboard');
     });
 
     test('Create single service appointment', async ({ page }) => {
-        await page.goto('/appointments');
+        await page.goto('/admin/appointments');
 
         // Click new appointment button
         await page.click('button:has-text("New Appointment")');
@@ -43,7 +43,7 @@ test.describe('Appointment Creation', () => {
     });
 
     test('Create multi-service appointment', async ({ page }) => {
-        await page.goto('/appointments');
+        await page.goto('/admin/appointments');
         await page.click('button:has-text("New Appointment")');
 
         // Select customer
@@ -72,7 +72,7 @@ test.describe('Appointment Creation', () => {
     });
 
     test('"Any Professional" booking', async ({ page }) => {
-        await page.goto('/appointments');
+        await page.goto('/admin/appointments');
         await page.click('button:has-text("New Appointment")');
 
         // Select customer
@@ -100,7 +100,7 @@ test.describe('Appointment Creation', () => {
     });
 
     test('Time conflict detection', async ({ page }) => {
-        await page.goto('/appointments');
+        await page.goto('/admin/appointments');
         await page.click('button:has-text("New Appointment")');
 
         // Select services with conflicting times

@@ -43,23 +43,22 @@ export const schedulingService = {
         };
 
         try {
-            const { data, error } = await supabase
+            const { data: row, error } = await supabase
                 .from('salon_settings')
                 .select('*')
-                .limit(1);
+                .maybeSingle();
 
             if (error) {
                 console.error('Error fetching salon settings:', error);
                 return defaults;
             }
 
-            if (!data || data.length === 0) {
+            if (!row) {
                 console.warn('No salon settings found, using defaults');
                 return defaults;
             }
 
-            // Merge database values with defaults (in case some columns are null)
-            return { ...defaults, ...data[0] };
+            return { ...defaults, ...row };
         } catch (error) {
             console.error('Error fetching salon settings:', error);
             return defaults;
@@ -72,18 +71,17 @@ export const schedulingService = {
     async updateSalonSettings(settings: Partial<SalonSettings>): Promise<{ success: boolean; message: string }> {
         try {
             // First, get the existing settings row ID
-            const { data: existingSettings, error: fetchError } = await supabase
+            const { data: existingRow, error: fetchError } = await supabase
                 .from('salon_settings')
                 .select('id')
-                .limit(1);
+                .maybeSingle();
 
             if (fetchError) {
                 console.error('Error fetching existing settings:', fetchError);
                 throw fetchError;
             }
 
-            if (!existingSettings || existingSettings.length === 0) {
-                // No settings row exists, create one
+            if (!existingRow) {
                 const { error: insertError } = await supabase
                     .from('salon_settings')
                     .insert({
@@ -97,11 +95,10 @@ export const schedulingService = {
                 return { success: true, message: 'Settings created successfully' };
             }
 
-            // Update the existing row
             const { error: updateError } = await supabase
                 .from('salon_settings')
                 .update(settings)
-                .eq('id', existingSettings[0].id);
+                .eq('id', existingRow.id);
 
             if (updateError) throw updateError;
 
@@ -415,6 +412,10 @@ export const schedulingService = {
             if (branchId) {
                 params.append('branch_id', branchId);
             }
+            params.append(
+                'organization_slug',
+                process.env.NEXT_PUBLIC_ORGANIZATION_SLUG || 'default'
+            );
 
             const response = await fetch(`/api/public/available-stylists?${params.toString()}`);
             if (!response.ok) {
@@ -497,6 +498,10 @@ export const schedulingService = {
             if (branchId && branchId !== 'undefined') {
                 params.append('branch_id', branchId);
             }
+            params.append(
+                'organization_slug',
+                process.env.NEXT_PUBLIC_ORGANIZATION_SLUG || 'default'
+            );
 
             const response = await fetch(`/api/public/consolidated-availability?${params.toString()}`);
             if (!response.ok) return [];

@@ -93,7 +93,11 @@ BEGIN
   
   -- 1. Create Dummy Branch
   INSERT INTO branches (id, name, address, phone) 
-  VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Main Branch', '123 Main St', '555-0100')
+  VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Colombo', 'No. 12, Galle Road, Colombo 03', '+94 11 234 5678')
+  ON CONFLICT DO NOTHING;
+
+  INSERT INTO branches (id, name, address, phone) 
+  VALUES ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Malabe', '45 Kaduwela Road, Malabe', '+94 11 555 0100')
   ON CONFLICT DO NOTHING;
 
   -- 2. Create Dummy Staff (No profile_id)

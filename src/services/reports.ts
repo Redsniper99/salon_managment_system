@@ -6,25 +6,27 @@ export const reportsService = {
     /**
      * Get basic dashboard stats for today
      */
-    async getDashboardStats() {
+    async getDashboardStats(branchId?: string) {
         const today = getLocalDateString();
 
-        // Get today's revenue
-        const { data: invoices, error: invoiceError } = await supabase
+        let invQuery = supabase
             .from('invoices')
             .select('total, created_at')
             .gte('created_at', `${today}T00:00:00`)
             .lte('created_at', `${today}T23:59:59`);
+        if (branchId) invQuery = invQuery.eq('branch_id', branchId);
+        const { data: invoices, error: invoiceError } = await invQuery;
 
         if (invoiceError) throw invoiceError;
 
         const todayRevenue = invoices?.reduce((sum, inv) => sum + (inv.total || 0), 0) || 0;
 
-        // Get appointment stats
-        const { data: appointments, error: apptError } = await supabase
+        let apptQuery = supabase
             .from('appointments')
             .select('status')
             .eq('appointment_date', today);
+        if (branchId) apptQuery = apptQuery.eq('branch_id', branchId);
+        const { data: appointments, error: apptError } = await apptQuery;
 
         if (apptError) throw apptError;
 
@@ -45,12 +47,14 @@ export const reportsService = {
     /**
      * Get top performing services by revenue
      */
-    async getTopServices(startDate: string, endDate: string) {
-        const { data: invoices, error } = await supabase
+    async getTopServices(startDate: string, endDate: string, branchId?: string) {
+        let q = supabase
             .from('invoices')
             .select('items')
             .gte('created_at', startDate)
             .lte('created_at', endDate);
+        if (branchId) q = q.eq('branch_id', branchId);
+        const { data: invoices, error } = await q;
 
         if (error) throw error;
 
@@ -80,9 +84,8 @@ export const reportsService = {
     /**
      * Get staff performance (revenue and appointment count)
      */
-    async getStaffPerformance(startDate: string, endDate: string) {
-        // Query invoices and join appointments
-        const { data: invoicesWithAppt, error: invError } = await supabase
+    async getStaffPerformance(startDate: string, endDate: string, branchId?: string) {
+        let q = supabase
             .from('invoices')
             .select(`
                 total,
@@ -93,6 +96,8 @@ export const reportsService = {
             .gte('created_at', `${startDate}T00:00:00`)
             .lte('created_at', `${endDate}T23:59:59`)
             .not('appointment', 'is', null);
+        if (branchId) q = q.eq('branch_id', branchId);
+        const { data: invoicesWithAppt, error: invError } = await q;
 
         if (invError) throw invError;
 

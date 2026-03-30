@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { getAdminClient } from '@/lib/supabase';
+import { resolvePublicOrganizationId, assertBranchInOrganization } from '@/lib/public-tenant';
 
-// Use Service Role Key to bypass RLS and read appointments
 const supabase = getAdminClient();
 
 interface TimeSlot {
@@ -28,12 +27,32 @@ export async function GET(request: NextRequest) {
         const serviceId = searchParams.get('service_id');
         const date = searchParams.get('date');
         const branchId = searchParams.get('branch_id');
+        const orgSlug = searchParams.get('organization_slug') || searchParams.get('organization_id');
+
+        const resolved = await resolvePublicOrganizationId(supabase, orgSlug);
+        if (!resolved) {
+            return NextResponse.json(
+                { success: false, error: 'organization_slug or organization_id is required and must be valid' },
+                { status: 400 }
+            );
+        }
+        const organizationId = resolved.organizationId;
 
         if (!serviceId || !date) {
             return NextResponse.json(
                 { success: false, error: 'service_id and date are required' },
                 { status: 400 }
             );
+        }
+
+        if (branchId) {
+            const ok = await assertBranchInOrganization(supabase, branchId, organizationId);
+            if (!ok) {
+                return NextResponse.json(
+                    { success: false, error: 'Invalid branch for this organization' },
+                    { status: 400 }
+                );
+            }
         }
 
         // Validate date
@@ -54,6 +73,7 @@ export async function GET(request: NextRequest) {
             .select('id, name, duration, price, category')
             .eq('id', serviceId)
             .eq('is_active', true)
+            .eq('organization_id', organizationId)
             .single();
 
         if (serviceError || !service) {
@@ -73,6 +93,7 @@ export async function GET(request: NextRequest) {
             .eq('role', 'Stylist')
             .eq('is_active', true)
             .eq('is_emergency_unavailable', false)
+            .eq('organization_id', organizationId)
             .contains('specializations', [serviceId]);
 
         if (branchId) {
@@ -112,7 +133,8 @@ export async function GET(request: NextRequest) {
         const { data: settings } = await supabase
             .from('salon_settings')
             .select('slot_interval')
-            .single();
+            .eq('organization_id', organizationId)
+            .maybeSingle();
 
         const slotInterval = settings?.slot_interval || 30;
 

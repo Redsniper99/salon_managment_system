@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { resolvePublicOrganizationId, assertBranchInOrganization } from '@/lib/public-tenant';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 /**
@@ -22,6 +23,16 @@ export async function GET(request: NextRequest) {
         const serviceId = searchParams.get('service_id');
         const branchId = searchParams.get('branch_id');
         const date = searchParams.get('date');
+        const orgSlug = searchParams.get('organization_slug') || searchParams.get('organization_id');
+
+        const resolved = await resolvePublicOrganizationId(supabase, orgSlug);
+        if (!resolved) {
+            return NextResponse.json(
+                { success: false, error: 'organization_slug or organization_id is required and must be valid' },
+                { status: 400 }
+            );
+        }
+        const organizationId = resolved.organizationId;
 
         if (!serviceId) {
             return NextResponse.json(
@@ -30,13 +41,23 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Get stylists who have this service in their specializations
+        if (branchId) {
+            const ok = await assertBranchInOrganization(supabase, branchId, organizationId);
+            if (!ok) {
+                return NextResponse.json(
+                    { success: false, error: 'Invalid branch for this organization' },
+                    { status: 400 }
+                );
+            }
+        }
+
         let query = supabase
             .from('staff')
             .select('id, name, phone, specializations, working_days, working_hours, is_emergency_unavailable')
             .eq('role', 'Stylist')
             .eq('is_active', true)
             .eq('is_emergency_unavailable', false)
+            .eq('organization_id', organizationId)
             .contains('specializations', [serviceId]);
 
         if (branchId) {
@@ -64,8 +85,7 @@ export async function GET(request: NextRequest) {
                 .from('stylist_unavailability')
                 .select('stylist_id')
                 .in('stylist_id', stylistIds)
-                .lte('start_date', date)
-                .gte('end_date', date);
+                .eq('unavailable_date', date);
 
             const unavailableIds = new Set(unavailability?.map(u => u.stylist_id) || []);
 
@@ -83,7 +103,8 @@ export async function GET(request: NextRequest) {
         const { data: services } = await supabase
             .from('services')
             .select('id, name, category')
-            .eq('is_active', true);
+            .eq('is_active', true)
+            .eq('organization_id', organizationId);
 
         const serviceMap = new Map(services?.map(s => [s.id, s]) || []);
 

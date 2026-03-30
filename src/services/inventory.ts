@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { InventoryProduct, InventoryTransaction, InventoryCategory, InventoryTransactionType } from '@/lib/types';
+import { getCurrentOrganizationId } from '@/lib/org-scope';
 
 export const inventoryService = {
     /**
@@ -84,10 +85,12 @@ export const inventoryService = {
         selling_price: number;
         supplier?: string;
     }) {
+        const organizationId = await getCurrentOrganizationId();
         const { data, error } = await supabase
             .from('inventory')
             .insert({
                 ...product,
+                organization_id: organizationId,
                 last_restocked_at: product.current_stock > 0 ? new Date().toISOString() : null
             })
             .select()
@@ -245,9 +248,10 @@ export const inventoryService = {
         notes?: string;
         created_by?: string;
     }) {
+        const organizationId = await getCurrentOrganizationId();
         const { error } = await supabase
             .from('inventory_transactions')
-            .insert(transaction);
+            .insert({ ...transaction, organization_id: organizationId });
 
         if (error) throw error;
     },

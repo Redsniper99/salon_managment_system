@@ -1,34 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { resolvePublicOrganizationId } from '@/lib/public-tenant';
 
-// Create a public Supabase client (no auth required for reading public data)
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 /**
  * GET /api/public/services
- * 
- * Returns all active services for the salon.
- * Supports optional filtering by category or gender.
- * 
+ *
  * Query params:
- * - category: Filter by service category (e.g., "Hair", "Spa", "Bridal")
- * - gender: Filter by gender applicability ("Male", "Female", "Unisex")
- * - branch_id: Filter by branch (optional)
+ * - organization_slug | organization_id: required tenant scope
+ * - category, gender: optional filters
  */
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const category = searchParams.get('category');
         const gender = searchParams.get('gender');
-        const branchId = searchParams.get('branch_id');
+        const orgSlug = searchParams.get('organization_slug') || searchParams.get('organization_id');
+
+        const resolved = await resolvePublicOrganizationId(supabase, orgSlug);
+        if (!resolved) {
+            return NextResponse.json(
+                { success: false, error: 'organization_slug or organization_id is required and must be valid' },
+                { status: 400 }
+            );
+        }
 
         let query = supabase
             .from('services')
             .select('id, name, description, category, price, duration, gender, is_active')
             .eq('is_active', true)
+            .eq('organization_id', resolved.organizationId)
             .order('category')
             .order('name');
 

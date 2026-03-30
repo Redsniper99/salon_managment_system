@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Service } from '@/lib/types';
+import { getCurrentOrganizationId } from '@/lib/org-scope';
 
 export const servicesService = {
     /**
@@ -62,9 +63,10 @@ export const servicesService = {
         gender?: 'Male' | 'Female' | 'Unisex';
         description?: string;
     }) {
+        const organizationId = await getCurrentOrganizationId();
         const { data, error } = await supabase
             .from('services')
-            .insert(service)
+            .insert({ ...service, organization_id: organizationId })
             .select()
             .single();
 

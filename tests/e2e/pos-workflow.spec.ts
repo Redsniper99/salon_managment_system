@@ -7,12 +7,12 @@ import { test, expect } from '@playwright/test';
 
 test.describe('POS Complete Workflow', () => {
     test.beforeEach(async ({ page }) => {
-        await page.goto('/login');
+        await page.goto('/admin/login');
         await page.fill('input[type="email"]', process.env.TEST_USER_EMAIL || 'test@salon.com');
         await page.fill('input[type="password"]', process.env.TEST_USER_PASSWORD || 'password');
         await page.click('button[type="submit"]');
-        await page.waitForURL('/dashboard');
-        await page.goto('/pos');
+        await page.waitForURL('/admin/dashboard');
+        await page.goto('/admin/pos');
     });
 
     test('Mixed cart: Appointment + Walk-in + Product', async ({ page }) => {

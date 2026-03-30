@@ -8,6 +8,7 @@ import type { Session } from '@supabase/supabase-js';
 interface AuthContextType {
     user: User | null;
     login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+    refreshProfile: () => Promise<void>;
     logout: () => Promise<void>;
     isAuthenticated: boolean;
     hasRole: (roles: UserRole[]) => boolean;
@@ -56,12 +57,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (error) throw error;
 
             if (data) {
+                let organizationSlug: string | undefined;
+                let organizationName: string | undefined;
+                if (data.organization_id) {
+                    const { data: org } = await supabase
+                        .from('organizations')
+                        .select('name, slug')
+                        .eq('id', data.organization_id)
+                        .maybeSingle();
+                    organizationSlug = org?.slug;
+                    organizationName = org?.name;
+                }
                 setUser({
                     id: data.id,
                     email: data.email,
                     name: data.name,
                     role: data.role as UserRole,
                     branchId: data.branch_id || undefined,
+                    organizationId: data.organization_id as string,
+                    organizationSlug,
+                    organizationName,
                     isActive: data.is_active,
                 });
             }
@@ -70,6 +85,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } finally {
             setLoading(false);
         }
+    };
+
+    const refreshProfile = async () => {
+        setLoading(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+            await fetchUserProfile(session);
+            return;
+        }
+        setUser(null);
+        setLoading(false);
     };
 
     const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
@@ -122,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             value={{
                 user,
                 login,
+                refreshProfile,
                 logout,
                 isAuthenticated: !!user,
                 hasRole,
