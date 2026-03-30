@@ -109,6 +109,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
     }, [user?.id]);
 
     const handleLogout = () => {
+        const ok = window.confirm('Are you sure you want to sign out?');
+        if (!ok) return;
+        setShowUserMenu(false);
         logout();
         router.push(adminPaths.login);
     };
